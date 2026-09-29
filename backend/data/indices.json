@@ -1,0 +1,53 @@
+[
+    {
+        "id": "1",
+        "name": "S&P 500",
+        "description": "A stock market index tracking the performance of 500 large companies listed on the NYSE or NASDAQ",
+        "tickers": [
+            "AAPL",
+            "MSFT",
+            "AMZN",
+            "GOOGL",
+            "FB",
+            "TSLA",
+            "BRK.B",
+            "JPM",
+            "JNJ",
+            "V"
+        ]
+    },
+    {
+        "id": "2",
+        "name": "NASDAQ Composite",
+        "description": "A stock market index that includes almost all stocks listed on the NASDAQ stock exchange",
+        "tickers": [
+            "AAPL",
+            "MSFT",
+            "AMZN",
+            "GOOGL",
+            "FB",
+            "TSLA",
+            "NVDA",
+            "PYPL",
+            "ADBE",
+            "CMCSA"
+        ]
+    },
+    {
+        "id": "3",
+        "name": "Dow Jones Industrial Average",
+        "description": "A stock market index that tracks 30 large, publicly-owned companies trading on the NYSE and NASDAQ",
+        "tickers": [
+            "AAPL",
+            "MSFT",
+            "JPM",
+            "V",
+            "JNJ",
+            "WMT",
+            "PG",
+            "DIS",
+            "HD",
+            "INTC"
+        ]
+    }
+]

@@ -1,0 +1,62 @@
+[
+    {
+        "id": "1",
+        "name": "s&p500"
+    },
+    {
+        "id": "2",
+        "name": "nasdaq"
+    },
+    {
+        "id": "3",
+        "name": "dowjones"
+    },
+    {
+        "id": "4",
+        "name": "ftse100"
+    },
+    {
+        "id": "5",
+        "name": "dax"
+    },
+    {
+        "id": "6",
+        "name": "nikkei225"
+    },
+    {
+        "id": "7",
+        "name": "hangseng"
+    },
+    {
+        "id": "8",
+        "name": "cac40"
+    },
+    {
+        "id": "9",
+        "name": "aex"
+    },
+    {
+        "id": "10",
+        "name": "bovespa"
+    },
+    {
+        "id": "11",
+        "name": "tsx"
+    },
+    {
+        "id": "12",
+        "name": "asx200"
+    },
+    {
+        "id": "13",
+        "name": "kospi"
+    },
+    {
+        "id": "14",
+        "name": "sensex"
+    },
+    {
+        "id": "15",
+        "name": "nifty50"
+    },
+]

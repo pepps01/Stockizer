@@ -1,0 +1,182 @@
+[
+    {
+        "id": "1",
+        "name": "United States",
+        "continent": "North America",
+        "currency": "USD"
+    },
+    {
+        "id": "2",
+        "name": "Canada",
+        "continent": "North America",
+        "currency": "CAD"
+    },
+    {
+        "id": "3",
+        "name": "United Kingdom",
+        "continent": "Europe",
+        "currency": "GBP"
+    },
+    {
+        "id": "4",
+        "name": "Germany",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "5",
+        "name": "France",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "6",
+        "name": "Japan",
+        "continent": "Asia",
+        "currency": "JPY"
+    },
+    {
+        "id": "7",
+        "name": "Hong Kong",
+        "continent": "Asia",
+        "currency": "HKD"
+    },
+    {
+        "id": "8",
+        "name": "Australia",
+        "continent": "Oceania",
+        "currency": "AUD"
+    },
+    {
+        "id": "9",
+        "name": "India",
+        "continent": "Asia",
+        "currency": "INR"
+    },
+    {
+        "id": "10",
+        "name": "Brazil",
+        "continent": "South America",
+        "currency": "BRL"
+    },
+    {
+        "id": "11",
+        "name": "China",
+        "continent": "Asia",
+        "currency": "CNY"
+    },
+    {
+        "id": "12",
+        "name": "South Korea",
+        "continent": "Asia",
+        "currency": "KRW"
+    },
+    {
+        "id": "13",
+        "name": "Italy",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "14",
+        "name": "Spain",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "15",
+        "name": "Mexico",
+        "continent": "North America",
+        "currency": "MXN"
+    },
+    {
+        "id": "16",
+        "name": "Russia",
+        "continent": "Europe",
+        "currency": "RUB"
+    },
+    {
+        "id": "17",
+        "name": "Netherlands",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "18",
+        "name": "Switzerland",
+        "continent": "Europe",
+        "currency": "CHF"
+    },
+    {
+        "id": "19",
+        "name": "Sweden",
+        "continent": "Europe",
+        "currency": "SEK"
+    },
+    {
+        "id": "20",
+        "name": "Norway",
+        "continent": "Europe",
+        "currency": "NOK"
+    },
+    {
+        "id": "21",
+        "name": "Denmark",
+        "continent": "Europe",
+        "currency": "DKK"
+    },
+    {
+        "id": "22",
+        "name": "Finland",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "23",
+        "name": "Belgium",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "24",
+        "name": "Austria",
+        "continent": "Europe",
+        "currency": "EUR"
+    },
+    {
+        "id": "25",
+        "name": "Nigeria",
+        "continent": "Africa",
+        "currency": "NGN"
+    },
+    {
+        "id": "26",
+        "name": "Egypt",
+        "continent": "Africa",
+        "currency": "EGP"
+    },
+    {
+        "id": "27",
+        "name": "South Africa",
+        "continent": "Africa",
+        "currency": "ZAR"
+    },
+    {
+        "id": "28",
+        "name": "Argentina",
+        "continent": "South America",
+        "currency": "ARS"
+    },
+    {
+        "id": "29",
+        "name": "Chile",
+        "continent": "South America",
+        "currency": "CLP"
+    },
+    {
+        "id": "30",
+        "name": "Colombia",
+        "continent": "South America",
+        "currency": "COP"
+    }
+]

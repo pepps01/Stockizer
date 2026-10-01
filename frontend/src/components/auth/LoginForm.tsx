@@ -19,7 +19,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       await login(form.email, form.password);
-      router.push("/");
+      router.push("/markets");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {

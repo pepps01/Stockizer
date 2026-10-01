@@ -1,80 +1,142 @@
-"""Composition root: the single place that wires concrete repository/service
-implementations to their contracts. Blueprints pull dependencies from the
-container via current_app.extensions["container"] — they never instantiate
-repositories or services directly. Swapping an implementation (e.g. SQLite to
-Postgres, yfinance to another provider) means changing only this file."""
+"""Composition root: the one place that chooses concrete implementations and
+wires them together behind their interfaces. Every other module depends on the
+contracts in app/contracts/ only. Swapping an implementation (another price
+source, an S3 artifact store, Postgres repositories) means changing this file."""
 
 from dataclasses import dataclass
 
-from flask import current_app
-
-from app.repositories.local_fundamentals_repository import LocalFundamentalsRepository
-from app.repositories.local_market_repository import LocalExchangeRepository, LocalTickerRepository
-from app.repositories.sqlalchemy_action_repository import SqlAlchemyUserActionRepository
-from app.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from app.analytics.ranking import RankingMetricRegistry
+from app.analytics.search import RandomRefineSearch
+from app.analytics.signal_engine import AlgebraicSignalEngine
+from app.analytics.stats import ReturnStatistics
+from app.analytics.technicals import TechnicalAnalyzer
+from app.api.base import ApiErrorHandler, Controller, CorsPolicy
+from app.api.controllers import (
+    AccountController,
+    AdviserController,
+    ArtifactController,
+    AuthController,
+    MarketsController,
+    OptimizerController,
+    SelectorController,
+)
+from app.api.realtime import RealtimeGateway
+from app.contracts.analytics import ISignalEngine
+from app.contracts.repositories import ICatalogRepository, IUnitOfWork, IUserRepository
+from app.contracts.services import (
+    IAccountService,
+    IAdviserService,
+    IArtifactStore,
+    IAuthService,
+    IEmailService,
+    IMarketBoard,
+    IMarketDataService,
+    IOptimizerService,
+    ISelectorService,
+)
+from app.repositories.account_repositories import SqlAlchemyUserActionRepository, SqlAlchemyWatchlistRepository
+from app.repositories.bar_repository import SqlAlchemyBarRepository
+from app.repositories.catalog_repository import SqlAlchemyCatalogRepository, TickerRefMapper
+from app.repositories.pipeline_repositories import (
+    SqlAlchemyAdviserSessionRepository,
+    SqlAlchemyArtifactRepository,
+    SqlAlchemyOptimizerRunRepository,
+    SqlAlchemySelectorRunRepository,
+    SqlAlchemySignalRepository,
+)
+from app.repositories.unit_of_work import SqlAlchemyUnitOfWork
+from app.repositories.user_repository import SqlAlchemyUserRepository
+from app.services.account import AccountService
+from app.services.adviser import AdviserService
+from app.services.artifact_store import LocalArtifactStore
 from app.services.auth_service import AuthService
-from app.services.mock_adviser import MockAdviser
-from app.services.mock_optimizer import MockOptimizer
-from app.services.mock_selector import MockStockSelector
+from app.services.market_board import MarketBoard
+from app.services.market_data import MarketDataService
+from app.services.optimizer import OptimizerService
+from app.services.selector import SelectorService
 from app.services.sendgrid_email_service import SendGridEmailService
-from app.services.yfinance_market_data import YFinanceMarketDataProvider
+from app.sources.synthetic import SyntheticFundamentalsProvider, SyntheticMarketModel, SyntheticPriceSource
+from app.sources.yahoo import YahooFundamentalsProvider, YahooPriceSource
 
 
 @dataclass
 class Container:
-    user_repository: SqlAlchemyUserRepository
-    action_repository: SqlAlchemyUserActionRepository
-    exchange_repository: LocalExchangeRepository
-    ticker_repository: LocalTickerRepository
-    fundamentals_repository: LocalFundamentalsRepository
-    market_data: YFinanceMarketDataProvider
-    email_service: SendGridEmailService
-    auth_service: AuthService
-    selector: MockStockSelector
-    optimizer: MockOptimizer
-    adviser: MockAdviser
+    uow: IUnitOfWork
+    catalog: ICatalogRepository
+    users: IUserRepository
+    engine: ISignalEngine
+    market_data: IMarketDataService
+    board: IMarketBoard
+    artifacts: IArtifactStore
+    email: IEmailService
+    auth: IAuthService
+    selector: ISelectorService
+    optimizer: IOptimizerService
+    adviser: IAdviserService
+    account: IAccountService
+    cors: CorsPolicy
+
+    def controllers(self) -> list[Controller]:
+        return [
+            AuthController(self.auth),
+            MarketsController(self.catalog, self.board, self.market_data, self.adviser),
+            SelectorController(self.selector),
+            OptimizerController(self.optimizer),
+            ArtifactController(self.artifacts),
+            AdviserController(self.adviser),
+            AccountController(self.account),
+        ]
+
+    def realtime_gateway(self) -> RealtimeGateway:
+        return RealtimeGateway(self.cors, self.catalog, self.market_data, self.adviser, self.uow)
+
+    def error_handler(self) -> ApiErrorHandler:
+        return ApiErrorHandler(self.uow)
 
 
 def build_container(config) -> Container:
-    user_repository = SqlAlchemyUserRepository()
-    action_repository = SqlAlchemyUserActionRepository()
-    exchange_repository = LocalExchangeRepository(config["MARKET_DATA_PATH"])
-    ticker_repository = LocalTickerRepository(config["MARKET_DATA_PATH"])
-    fundamentals_repository = LocalFundamentalsRepository(config["FUNDAMENTALS_DATA_PATH"])
-    market_data = YFinanceMarketDataProvider()
+    uow = SqlAlchemyUnitOfWork()
+    catalog = SqlAlchemyCatalogRepository()
+    users = SqlAlchemyUserRepository()
+    optimizer_runs = SqlAlchemyOptimizerRunRepository()
 
-    email_service = SendGridEmailService(
-        api_key=config["SENDGRID_API_KEY"],
-        email_from=config["EMAIL_FROM"],
-        frontend_url=config["FRONTEND_URL"],
+    statistics = ReturnStatistics()
+    engine = AlgebraicSignalEngine(statistics)
+
+    market_data = MarketDataService(
+        bars=SqlAlchemyBarRepository(),
+        sources={"yahoo": YahooPriceSource(), "synthetic": SyntheticPriceSource(SyntheticMarketModel())},
+        fundamentals={"yahoo": YahooFundamentalsProvider(), "synthetic": SyntheticFundamentalsProvider()},
+        mapper=TickerRefMapper(force_synthetic=config["MARKET_DATA_MODE"] == "synthetic"),
     )
-
-    auth_service = AuthService(
-        user_repository,
-        email_service,
-        secret_key=config["SECRET_KEY"],
-        salt=config["EMAIL_VERIFICATION_SALT"],
-        max_age_seconds=config["EMAIL_VERIFICATION_MAX_AGE_SECONDS"],
-    )
-
-    selector = MockStockSelector(fundamentals_repository, market_data)
-    optimizer = MockOptimizer()
-    adviser = MockAdviser()
+    artifacts = LocalArtifactStore(config["ARTIFACT_DIR"], SqlAlchemyArtifactRepository(), uow)
+    email = SendGridEmailService(api_key=config["SENDGRID_API_KEY"], email_from=config["EMAIL_FROM"], frontend_url=config["FRONTEND_URL"])
+    selector = SelectorService(catalog, market_data, artifacts, SqlAlchemySelectorRunRepository(), uow, statistics, RankingMetricRegistry.default())
 
     return Container(
-        user_repository=user_repository,
-        action_repository=action_repository,
-        exchange_repository=exchange_repository,
-        ticker_repository=ticker_repository,
-        fundamentals_repository=fundamentals_repository,
+        uow=uow,
+        catalog=catalog,
+        users=users,
+        engine=engine,
         market_data=market_data,
-        email_service=email_service,
-        auth_service=auth_service,
+        board=MarketBoard(catalog, market_data, TechnicalAnalyzer()),
+        artifacts=artifacts,
+        email=email,
+        auth=AuthService(
+            users, catalog, email, uow,
+            secret_key=config["SECRET_KEY"],
+            salt=config["EMAIL_VERIFICATION_SALT"],
+            max_age_seconds=config["EMAIL_VERIFICATION_MAX_AGE_SECONDS"],
+        ),
         selector=selector,
-        optimizer=optimizer,
-        adviser=adviser,
+        optimizer=OptimizerService(
+            catalog, market_data, artifacts, optimizer_runs, selector, uow, engine,
+            search_factory=lambda e: RandomRefineSearch(samples=150, refine_steps=60, initial=e.default_params()),
+        ),
+        adviser=AdviserService(
+            catalog, market_data, engine, SqlAlchemyAdviserSessionRepository(), SqlAlchemySignalRepository(),
+            optimizer_runs, users, email, uow,
+        ),
+        account=AccountService(catalog, market_data, SqlAlchemyWatchlistRepository(), SqlAlchemyUserActionRepository(), uow),
+        cors=CorsPolicy(config["CORS_ORIGINS"]),
     )
-
-
-def get_container() -> Container:
-    return current_app.extensions["container"]

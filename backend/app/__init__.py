@@ -1,47 +1,57 @@
+import logging
 import os
 
 from flask import Flask
-from flask_cors import CORS
 
 from app.config import config_by_name
-from app.container import build_container
-from app.extensions import db, jwt, migrate
+from app.container import Container, build_container
+from app.extensions import db, jwt, limiter, migrate, sock
+
+
+class ApplicationFactory:
+    """Builds the Flask app: configuration, extensions, the dependency
+    container, CORS, error handling, REST controllers and the WebSocket gateway."""
+
+    def __init__(self, config_name: str | None = None):
+        self._config_name = config_name or os.environ.get("FLASK_ENV", "development")
+
+    def create(self) -> Flask:
+        app = Flask(__name__)
+        app.config.from_object(config_by_name[self._config_name])
+        self._configure_logging()
+
+        for extension in (db, jwt, limiter, sock):
+            extension.init_app(app)
+        migrate.init_app(app, db)
+
+        container = build_container(app.config)
+        app.extensions["container"] = container
+        container.cors.apply(app)
+        container.error_handler().register(app)
+        for controller in container.controllers():
+            app.register_blueprint(controller.blueprint)
+        container.realtime_gateway().register(sock)
+
+        from app.cli import register_cli
+
+        register_cli(app, container)
+
+        from app import models  # noqa: F401 — register models with SQLAlchemy metadata
+
+        if app.config.get("TESTING"):
+            with app.app_context():
+                db.create_all()
+        return app
+
+    @staticmethod
+    def _configure_logging() -> None:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 
 def create_app(config_name: str | None = None) -> Flask:
-    config_name = config_name or os.environ.get("FLASK_ENV", "development")
-    app = Flask(__name__)
-    app.config.from_object(config_by_name[config_name])
+    return ApplicationFactory(config_name).create()
 
-    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///") and "instance" in app.config["SQLALCHEMY_DATABASE_URI"]:
-        os.makedirs(os.path.join(os.getcwd(), "instance"), exist_ok=True)
 
-    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
-    db.init_app(app)
-    migrate.init_app(app, db)
-    jwt.init_app(app)
-
-    app.extensions["container"] = build_container(app.config)
-
-    from app.api.adviser import bp as adviser_bp
-    from app.api.auth import bp as auth_bp
-    from app.api.markets import bp as markets_bp
-    from app.api.optimizer import bp as optimizer_bp
-    from app.api.selector import bp as selector_bp
-
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(markets_bp)
-    app.register_blueprint(selector_bp)
-    app.register_blueprint(optimizer_bp)
-    app.register_blueprint(adviser_bp)
-
-    @app.get("/api/health")
-    def health():
-        return {"status": "ok"}
-
-    with app.app_context():
-        from app import models  # noqa: F401 — ensure models are registered before create_all
-
-        db.create_all()
-
-    return app
+def get_container(app: Flask) -> Container:
+    return app.extensions["container"]

@@ -1,85 +1,89 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import { errorMessage } from "@/lib/use-async";
+import type { AlertChannel, RiskProfile } from "@/lib/types";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ExchangePicker } from "@/components/market/ExchangePicker";
+import { Card, ErrorNote, Field, PageHeader, PageShell } from "@/components/ui/primitives";
 
 export default function ProfilePage() {
-  const router = useRouter();
-  const { user, token, isLoading, refreshUser } = useAuth();
-  const [form, setForm] = useState({ first_name: "", last_name: "" });
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  return <RequireAuth feature="profile">{(token) => <Profile token={token} />}</RequireAuth>;
+}
+
+function Profile({ token }: { token: string }) {
+  const { user, refreshUser } = useAuth();
+  // RequireAuth only renders this once the token — and with it the user — is loaded.
+  const [form, setForm] = useState({
+    first_name: user?.first_name ?? "",
+    last_name: user?.last_name ?? "",
+    risk_profile: (user?.risk_profile ?? "moderate") as RiskProfile,
+    alert_channels: (user?.alert_channels ?? ["in_app"]) as AlertChannel[],
+    default_exchange: user?.default_exchange ?? "",
+  });
+  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isLoading && !user) router.push("/login");
-  }, [isLoading, user, router]);
+  const toggleChannel = (channel: AlertChannel) =>
+    setForm((f) => ({
+      ...f,
+      alert_channels: f.alert_channels.includes(channel) ? f.alert_channels.filter((c) => c !== channel) : [...f.alert_channels, channel],
+    }));
 
-  useEffect(() => {
-    if (user) setForm({ first_name: user.first_name, last_name: user.last_name });
-  }, [user]);
-
-  if (isLoading || !user || !token) {
-    return (
-      <main className="mx-auto w-full max-w-md flex-1 px-4 py-16 sm:px-6">
-        <p className="text-center text-sm text-muted-foreground">Loading…</p>
-      </main>
-    );
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("saving");
     setError(null);
     try {
-      await api.updateMe(token, form);
+      await api.updateMe(token, { ...form, default_exchange: form.default_exchange || null });
       await refreshUser();
       setStatus("saved");
     } catch (err) {
-      setStatus("error");
-      setError(err instanceof ApiError ? err.message : "Failed to save changes");
+      setError(errorMessage(err));
+      setStatus("idle");
     }
   };
 
   return (
-    <main className="mx-auto w-full max-w-md flex-1 px-4 py-16 sm:px-6">
-      <h1 className="mb-6 text-center text-2xl font-semibold">Your profile</h1>
-      <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-4">
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">First name</span>
-          <input
-            required
-            className="input"
-            value={form.first_name}
-            onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Last name</span>
-          <input
-            required
-            className="input"
-            value={form.last_name}
-            onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Email</span>
-          <input className="input opacity-60" value={user.email} disabled />
-        </label>
-
-        {error && <p className="text-sm text-loss">{error}</p>}
-        {status === "saved" && <p className="text-sm text-gain">Profile updated.</p>}
-
-        <button
-          type="submit"
-          disabled={status === "saving"}
-          className="w-full rounded-lg bg-brand py-2.5 text-sm font-medium text-brand-foreground hover:opacity-90 disabled:opacity-50"
-        >
-          {status === "saving" ? "Saving…" : "Save changes"}
-        </button>
-      </form>
-    </main>
+    <PageShell width="max-w-xl">
+      <PageHeader title="Profile" subtitle={user?.email} />
+      <Card>
+        <form onSubmit={submit} className="space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="First name">
+              <input className="input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
+            </Field>
+            <Field label="Last name">
+              <input className="input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+            </Field>
+          </div>
+          <Field label="Risk profile" hint="Recorded with your account for future personalisation of signals.">
+            <select className="input" value={form.risk_profile} onChange={(e) => setForm({ ...form, risk_profile: e.target.value as RiskProfile })}>
+              <option value="conservative">Conservative</option>
+              <option value="moderate">Moderate</option>
+              <option value="aggressive">Aggressive</option>
+            </select>
+          </Field>
+          <Field label="Default exchange">
+            <ExchangePicker value={form.default_exchange} onChange={(code) => setForm({ ...form, default_exchange: code })} />
+          </Field>
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium">Signal alerts</legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.alert_channels.includes("in_app")} onChange={() => toggleChannel("in_app")} /> In-app (live toasts)
+            </label>
+            <label className="mt-1 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.alert_channels.includes("email")} onChange={() => toggleChannel("email")} /> Email me when a signal changes
+            </label>
+          </fieldset>
+          <ErrorNote message={error} />
+          <button className="btn-primary w-full" disabled={status === "saving"}>
+            {status === "saving" ? "Saving…" : status === "saved" ? "Saved ✓" : "Save changes"}
+          </button>
+        </form>
+      </Card>
+    </PageShell>
   );
 }

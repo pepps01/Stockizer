@@ -1,73 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { use } from "react";
 import { api } from "@/lib/api";
-import type { Exchange, Ticker } from "@/lib/types";
-import { ExchangeStatusBadge } from "@/components/market/ExchangeStatusBadge";
-import { changeColorClass, formatPercent, formatPrice } from "@/lib/format";
+import { useAsync } from "@/lib/use-async";
+import { currencyLabel } from "@/lib/format";
+import { MarketTable } from "@/components/market/MarketTable";
+import { MoversBoard } from "@/components/market/MoversBoard";
+import { Flag } from "@/components/ui/Flag";
+import { MarketStatus, SourceBadge } from "@/components/ui/Badges";
+import { ErrorNote, PageHeader, PageShell, Skeleton } from "@/components/ui/primitives";
 
-export default function ExchangeTickersPage({ params }: { params: Promise<{ exchange: string }> }) {
-  const { exchange: exchangeCode } = use(params);
-  const [exchange, setExchange] = useState<Exchange | null>(null);
-  const [tickers, setTickers] = useState<Ticker[] | null>(null);
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-  useEffect(() => {
-    api.getExchangeTickers(exchangeCode).then(({ exchange, tickers }) => {
-      setExchange(exchange);
-      setTickers(tickers);
-    });
-  }, [exchangeCode]);
+export default function ExchangePage({ params }: { params: Promise<{ exchange: string }> }) {
+  const { exchange: code } = use(params);
+  const listing = useAsync(() => api.exchange(code), [code]);
+  const movers = useAsync(() => api.movers({ exchange: code, limit: 4 }), [code]);
+  const exchange = listing.data?.exchange;
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-      <Link href="/markets" className="text-sm text-muted-foreground hover:text-foreground">
-        ← Exchanges
+    <PageShell>
+      <Link href={exchange ? `/markets?country=${exchange.country_code}` : "/markets"} className="text-sm text-muted-foreground hover:text-foreground">
+        ← {exchange?.country ?? "Markets"}
       </Link>
-
-      {exchange && (
-        <div className="mt-2 mb-6 flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">{exchange.name}</h1>
-          <ExchangeStatusBadge isOpen={exchange.is_open} />
+      {exchange ? (
+        <div className="mt-2">
+          <PageHeader
+            icon={<Flag code={exchange.country_code} size={48} />}
+            title={
+              <span className="flex flex-wrap items-center gap-3">
+                {exchange.name} <SourceBadge source={exchange.data_source} />
+              </span>
+            }
+            subtitle={
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <MarketStatus open={exchange.is_open} localTime={exchange.local_time} />
+                <span>
+                  {exchange.trading_days.map((d) => DAYS[d]).join(" · ")} · {exchange.opens_at}–{exchange.closes_at} ({exchange.timezone})
+                </span>
+                <span>Local time {exchange.local_time.slice(11)}</span>
+                <span>Quoted in {currencyLabel(exchange.currency)}</span>
+              </span>
+            }
+            actions={
+              <Link href={`/selector?exchange=${exchange.code}`} className="btn-primary">
+                Rank this exchange →
+              </Link>
+            }
+          />
         </div>
-      )}
-
-      {!tickers ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">Symbol</th>
-                <th className="hidden px-4 py-3 font-medium sm:table-cell">Name</th>
-                <th className="px-4 py-3 text-right font-medium">Price</th>
-                <th className="px-4 py-3 text-right font-medium">Change</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {tickers.map((ticker) => (
-                <tr key={ticker.symbol}>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/ticker/${ticker.symbol}`}
-                      className="font-medium text-brand hover:underline"
-                    >
-                      {ticker.symbol}
-                    </Link>
-                  </td>
-                  <td className="hidden px-4 py-3 text-muted-foreground sm:table-cell">{ticker.name}</td>
-                  <td className="px-4 py-3 text-right">{formatPrice(ticker.price)}</td>
-                  <td className={`px-4 py-3 text-right ${changeColorClass(ticker.change_percent)}`}>
-                    {formatPercent(ticker.change_percent)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Skeleton className="mt-4 h-16 w-2/3" />
       )}
-    </main>
+
+      <ErrorNote message={listing.error} />
+
+      {!!listing.data?.indices.length && (
+        <section className="card mb-6 p-5">
+          <h2 className="mb-4 text-lg font-semibold">Indices</h2>
+          <MarketTable rows={listing.data.indices} showCountry={false} />
+        </section>
+      )}
+
+      <section className="card p-5">
+        <h2 className="mb-4 text-lg font-semibold">Listed stocks</h2>
+        <MarketTable rows={listing.data?.stocks ?? null} loading={listing.loading} showCountry={false} />
+      </section>
+
+      <section className="mt-8">
+        <MoversBoard movers={movers.data} loading={movers.loading} />
+      </section>
+    </PageShell>
   );
 }

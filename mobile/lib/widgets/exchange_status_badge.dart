@@ -1,30 +1,27 @@
 import 'package:flutter/material.dart';
+
 import '../theme.dart';
 
-class ExchangeStatusBadge extends StatelessWidget {
-  final bool isOpen;
-  const ExchangeStatusBadge({super.key, required this.isOpen});
+/// "Market open" / "Market closed" with a status dot.
+class MarketStatus extends StatelessWidget {
+  const MarketStatus({super.key, required this.open});
+
+  final bool open;
 
   @override
   Widget build(BuildContext context) {
-    final color = isOpen ? AppColors.gain : Theme.of(context).colorScheme.onSurfaceVariant;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 6),
-          Text(
-            isOpen ? 'Open' : 'Closed',
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
+    final p = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: open ? p.gain : p.mutedForeground.withValues(alpha: 0.5), shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(open ? 'Market open' : 'Market closed', style: TextStyle(fontSize: 12, color: p.mutedForeground)),
+      ],
     );
   }
 }

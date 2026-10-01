@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/market.dart';
 import '../models/selector_result.dart';
+import '../models/strategy.dart';
 import '../models/user.dart';
 
 class ApiException implements Exception {
@@ -13,127 +15,263 @@ class ApiException implements Exception {
   final int statusCode;
   ApiException(this.message, this.statusCode);
 
+  bool get isUnverified => statusCode == 403 && message.toLowerCase().contains('verify');
+
   @override
   String toString() => message;
 }
 
+/// Typed client for the Algizer REST API — the Dart twin of
+/// frontend/src/lib/api.ts. Every call returns parsed models.
 class ApiClient {
-  static String get baseUrl {
-    // Android emulators can't reach the host machine via localhost — 10.0.2.2
-    // is the documented alias. A physical device needs the host's LAN IP
-    // instead (override via --dart-define=API_BASE_URL=http://<lan-ip>:5000).
+  ApiClient({String? baseUrl, http.Client? httpClient})
+      : baseUrl = baseUrl ?? defaultBaseUrl,
+        _http = httpClient ?? http.Client();
+
+  final String baseUrl;
+  final http.Client _http;
+
+  static String get defaultBaseUrl {
+    // Android emulators reach the host machine through 10.0.2.2. A physical
+    // device needs the host's LAN IP: --dart-define=API_BASE_URL=http://<lan-ip>:5000
     const override = String.fromEnvironment('API_BASE_URL');
     if (override.isNotEmpty) return override;
     if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:5000';
     return 'http://localhost:5000';
   }
 
-  Future<Map<String, dynamic>> _request(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    String? token,
-  }) async {
-    final uri = Uri.parse('$baseUrl$path');
-    final headers = {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-
-    late http.Response response;
-    switch (method) {
-      case 'GET':
-        response = await http.get(uri, headers: headers);
-        break;
-      case 'POST':
-        response = await http.post(uri, headers: headers, body: body != null ? jsonEncode(body) : null);
-        break;
-      case 'PUT':
-        response = await http.put(uri, headers: headers, body: body != null ? jsonEncode(body) : null);
-        break;
-      default:
-        throw ArgumentError('Unsupported method $method');
-    }
-
-    final decoded = response.body.isNotEmpty ? jsonDecode(response.body) as Map<String, dynamic> : <String, dynamic>{};
-
-    if (response.statusCode >= 400) {
-      throw ApiException(decoded['error'] as String? ?? 'Request failed', response.statusCode);
-    }
-    return decoded;
+  /// ws(s)://host/ws — override with --dart-define=WS_URL=…
+  String get socketUrl {
+    const override = String.fromEnvironment('WS_URL');
+    if (override.isNotEmpty) return override;
+    return '${baseUrl.replaceFirst(RegExp('^http'), 'ws')}/ws';
   }
 
-  Future<User> register({
-    required String firstName,
-    required String lastName,
-    required String email,
-    required String password,
+  static const _defaultTimeout = Duration(seconds: 30);
+  // Selector / Optimizer runs download history on first use and can take minutes.
+  static const _pipelineTimeout = Duration(minutes: 5);
+
+  Future<Json> _request(
+    String method,
+    String path, {
+    Object? body,
+    String? token,
+    Duration timeout = _defaultTimeout,
   }) async {
-    final json = await _request('POST', '/api/auth/register', body: {
-      'first_name': firstName,
-      'last_name': lastName,
-      'email': email,
-      'password': password,
-    });
-    return User.fromJson(json['user'] as Map<String, dynamic>);
+    final request = http.Request(method, Uri.parse('$baseUrl$path'))
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'application/json';
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    if (body != null) request.body = jsonEncode(body);
+
+    final http.Response response;
+    try {
+      response = await http.Response.fromStream(await _http.send(request).timeout(timeout));
+    } on TimeoutException {
+      throw ApiException('The server took too long to respond. Try again.', 0);
+    } catch (_) {
+      throw ApiException('Can’t reach the Algizer server at $baseUrl.', 0);
+    }
+
+    if (response.statusCode == 204 || response.body.isEmpty) {
+      if (response.statusCode >= 400) throw ApiException('Request failed (${response.statusCode})', response.statusCode);
+      return const {};
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      decoded = null;
+    }
+    final json = decoded is Json ? decoded : const <String, dynamic>{};
+    if (response.statusCode >= 400) {
+      throw ApiException(json['error'] as String? ?? 'Request failed (${response.statusCode})', response.statusCode);
+    }
+    return json;
+  }
+
+  Future<Json> _get(String path, {String? token}) => _request('GET', path, token: token);
+
+  Future<Json> _post(String path, Object body, {String? token, Duration timeout = _defaultTimeout}) =>
+      _request('POST', path, body: body, token: token, timeout: timeout);
+
+  static String _query(Map<String, Object?> params) {
+    final entries = params.entries.where((e) => e.value != null && e.value.toString().isNotEmpty);
+    if (entries.isEmpty) return '';
+    return '?${entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value.toString())}').join('&')}';
+  }
+
+  static String _seg(String value) => Uri.encodeComponent(value);
+
+  // ---- auth ----
+
+  Future<User> register({required String firstName, required String lastName, required String email, required String password}) async {
+    final json = await _post('/api/auth/register', {'first_name': firstName, 'last_name': lastName, 'email': email, 'password': password});
+    return User.fromJson(json['user'] as Json);
   }
 
   Future<User> verifyEmail(String token) async {
-    final json = await _request('GET', '/api/auth/verify-email?token=${Uri.encodeComponent(token)}');
-    return User.fromJson(json['user'] as Map<String, dynamic>);
+    final json = await _get('/api/auth/verify-email${_query({'token': token})}');
+    return User.fromJson(json['user'] as Json);
   }
 
   Future<(String, User)> login(String email, String password) async {
-    final json = await _request('POST', '/api/auth/login', body: {'email': email, 'password': password});
-    return (json['access_token'] as String, User.fromJson(json['user'] as Map<String, dynamic>));
+    final json = await _post('/api/auth/login', {'email': email, 'password': password});
+    return (json['access_token'] as String, User.fromJson(json['user'] as Json));
   }
 
-  Future<User> getMe(String token) async {
-    final json = await _request('GET', '/api/auth/me', token: token);
-    return User.fromJson(json['user'] as Map<String, dynamic>);
-  }
+  Future<User> getMe(String token) async => User.fromJson((await _get('/api/auth/me', token: token))['user'] as Json);
 
-  Future<User> updateMe(String token, {String? firstName, String? lastName}) async {
+  Future<User> updateMe(
+    String token, {
+    String? firstName,
+    String? lastName,
+    String? riskProfile,
+    List<String>? alertChannels,
+    String? defaultExchange,
+    bool clearDefaultExchange = false,
+  }) async {
     final json = await _request('PUT', '/api/auth/me', token: token, body: {
       'first_name': ?firstName,
       'last_name': ?lastName,
+      'risk_profile': ?riskProfile,
+      'alert_channels': ?alertChannels,
+      if (defaultExchange != null || clearDefaultExchange) 'default_exchange': defaultExchange,
     });
-    return User.fromJson(json['user'] as Map<String, dynamic>);
+    return User.fromJson(json['user'] as Json);
   }
 
-  Future<List<Exchange>> listExchanges() async {
-    final json = await _request('GET', '/api/exchanges');
-    return (json['exchanges'] as List<dynamic>)
-        .map((e) => Exchange.fromJson(e as Map<String, dynamic>))
-        .toList();
+  // ---- markets ----
+
+  Future<List<Country>> countries() async => listOf((await _get('/api/countries'))['countries'], Country.fromJson);
+
+  Future<List<Exchange>> exchanges({String? country}) async =>
+      listOf((await _get('/api/exchanges${_query({'country': country})}'))['exchanges'], Exchange.fromJson);
+
+  Future<ExchangeListing> exchange(String code) async => ExchangeListing.fromJson(await _get('/api/exchanges/${_seg(code)}'));
+
+  Future<List<MarketRow>> indices({String? country}) async =>
+      listOf((await _get('/api/indices${_query({'country': country})}'))['indices'], MarketRow.fromJson);
+
+  Future<Movers> movers({String? country, String? exchange, int? limit}) async =>
+      Movers.fromJson(await _get('/api/movers${_query({'country': country, 'exchange': exchange, 'limit': limit})}'));
+
+  Future<List<TickerInfo>> search(String text) async =>
+      listOf((await _get('/api/search${_query({'q': text})}'))['results'], TickerInfo.fromJson);
+
+  Future<SymbolDetail> symbol(String symbol) async => SymbolDetail.fromJson(await _get('/api/symbols/${_seg(symbol)}'));
+
+  Future<List<Bar>> history(String symbol, String range) async =>
+      listOf((await _get('/api/symbols/${_seg(symbol)}/history${_query({'range': range})}'))['bars'], Bar.fromJson);
+
+  /// The Adviser's current call — the user's latest optimised parameters when signed in.
+  Future<(AdviserSignal, String?)> signal(String symbol, {String? token}) async {
+    final json = await _get('/api/symbols/${_seg(symbol)}/signal', token: token);
+    return (AdviserSignal.fromJson(json['signal'] as Json), json['optimizer_run_id']?.toString());
   }
 
-  Future<(Exchange, List<Ticker>)> getExchangeTickers(String code) async {
-    final json = await _request('GET', '/api/exchanges/$code/tickers');
-    final exchange = Exchange.fromJson(json['exchange'] as Map<String, dynamic>);
-    final tickers =
-        (json['tickers'] as List<dynamic>).map((t) => Ticker.fromJson(t as Map<String, dynamic>)).toList();
-    return (exchange, tickers);
+  // ---- selector ----
+
+  Future<SelectorOptions> selectorOptions() async => SelectorOptions.fromJson(await _get('/api/selector/options'));
+
+  Future<SelectorRun> runSelector(
+    String token, {
+    required String exchange,
+    required String periodStart,
+    required String periodEnd,
+    required String metric,
+    required int topN,
+  }) async {
+    final json = await _post(
+      '/api/selector/runs',
+      {'exchange': exchange, 'period_start': periodStart, 'period_end': periodEnd, 'metric': metric, 'top_n': topN},
+      token: token,
+      timeout: _pipelineTimeout,
+    );
+    return SelectorRun.fromJson(json['run'] as Json);
   }
 
-  Future<Ticker> getTicker(String symbol) async {
-    final json = await _request('GET', '/api/tickers/$symbol');
-    return Ticker.fromJson(json['ticker'] as Map<String, dynamic>);
+  Future<List<SelectorRun>> selectorRuns(String token) async =>
+      listOf((await _get('/api/selector/runs', token: token))['runs'], SelectorRun.fromJson);
+
+  Future<SelectorRun> selectorRun(String token, String id) async =>
+      SelectorRun.fromJson((await _get('/api/selector/runs/${_seg(id)}', token: token))['run'] as Json);
+
+  // ---- optimizer ----
+
+  Future<OptimizerOptions> optimizerOptions() async => OptimizerOptions.fromJson(await _get('/api/optimizer/options'));
+
+  /// Tune either the top-K tickers of a Selector run or explicit [symbols].
+  Future<List<OptimizerRun>> runOptimizer(
+    String token, {
+    List<String>? symbols,
+    String? selectorRunId,
+    int? topK,
+    required String trainingStart,
+    required String trainingEnd,
+    required String objective,
+    Map<String, (double, double)> bounds = const {},
+  }) async {
+    final json = await _post(
+      '/api/optimizer/runs',
+      {
+        'symbols': ?symbols,
+        'selector_run_id': ?selectorRunId,
+        'top_k': ?topK,
+        'training_start': trainingStart,
+        'training_end': trainingEnd,
+        'objective': objective,
+        'bounds': {for (final e in bounds.entries) e.key: [e.value.$1, e.value.$2]},
+      },
+      token: token,
+      timeout: _pipelineTimeout,
+    );
+    return listOf(json['runs'], OptimizerRun.fromJson);
   }
 
-  Future<List<PricePoint>> getTickerHistory(String symbol, {String period = '1mo', String interval = '1d'}) async {
-    final json = await _request('GET', '/api/tickers/$symbol/history?period=$period&interval=$interval');
-    return (json['history'] as List<dynamic>).map((p) => PricePoint.fromJson(p as Map<String, dynamic>)).toList();
+  Future<List<OptimizerRun>> optimizerRuns(String token, {String? symbol}) async =>
+      listOf((await _get('/api/optimizer/runs${_query({'symbol': symbol})}', token: token))['runs'], OptimizerRun.fromJson);
+
+  Future<OptimizerRun> optimizerRun(String token, String id) async =>
+      OptimizerRun.fromJson((await _get('/api/optimizer/runs/${_seg(id)}', token: token))['run'] as Json);
+
+  // ---- adviser ----
+
+  Future<List<AdviserSession>> sessions(String token) async =>
+      listOf((await _get('/api/adviser/sessions', token: token))['sessions'], AdviserSession.fromJson);
+
+  Future<AdviserSession> createSession(String token, {required String symbol, required int intervalSec, String? optimizerRunId}) async {
+    final json = await _post(
+      '/api/adviser/sessions',
+      {'symbol': symbol, 'interval_sec': intervalSec, 'optimizer_run_id': optimizerRunId},
+      token: token,
+    );
+    return AdviserSession.fromJson(json['session'] as Json);
   }
 
-  Future<List<SelectorResult>> runSelector(String stockType, {int topN = 10}) async {
-    final json = await _request('GET', '/api/selector?type=$stockType&top_n=$topN');
-    return (json['results'] as List<dynamic>)
-        .map((r) => SelectorResult.fromJson(r as Map<String, dynamic>))
-        .toList();
+  Future<AdviserSession> updateSession(String token, String id, String status) async {
+    final json = await _request('PATCH', '/api/adviser/sessions/${_seg(id)}', token: token, body: {'status': status});
+    return AdviserSession.fromJson(json['session'] as Json);
   }
 
-  Future<void> recordSelectorAction(String token, {required String symbol, required String action}) {
-    return _request('POST', '/api/selector/action', token: token, body: {'symbol': symbol, 'action': action});
+  Future<SignalEvent?> evaluateSession(String token, String id) async {
+    final json = await _post('/api/adviser/sessions/${_seg(id)}/evaluate', const {}, token: token);
+    return json['signal'] == null ? null : SignalEvent.fromJson(json['signal'] as Json);
   }
+
+  Future<List<SignalEvent>> signals(String token, {String? sessionId}) async =>
+      listOf((await _get('/api/adviser/signals${_query({'session_id': sessionId})}', token: token))['signals'], SignalEvent.fromJson);
+
+  // ---- account ----
+
+  Future<List<MarketRow>> watchlist(String token) async => listOf((await _get('/api/watchlist', token: token))['items'], MarketRow.fromJson);
+
+  Future<void> addToWatchlist(String token, String symbol) => _post('/api/watchlist', {'symbol': symbol}, token: token);
+
+  Future<void> removeFromWatchlist(String token, String symbol) =>
+      _request('DELETE', '/api/watchlist/${_seg(symbol)}', token: token);
+
+  /// Journal the user's own decision — Algizer never places orders.
+  Future<void> recordAction(String token, String symbol, String action) =>
+      _post('/api/actions', {'symbol': symbol, 'action': action}, token: token);
 }

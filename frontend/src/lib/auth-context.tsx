@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
 import { api } from "./api";
+import { realtime } from "./realtime";
 import type { User } from "./types";
 
 interface AuthContextValue {
@@ -15,7 +16,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_KEY = "tickizer_token";
+const TOKEN_KEY = "algizer_token";
+
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // storage unavailable (private mode); the session just won't persist
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -23,45 +41,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
-    if (!stored) {
-      setIsLoading(false);
-      return;
-    }
-    setToken(stored);
-    api
-      .getMe(stored)
-      .then(({ user }) => setUser(user))
-      .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        setToken(null);
-      })
-      .finally(() => setIsLoading(false));
+    const stored = readStoredToken();
+    const restore = stored
+      ? api
+          .getMe(stored)
+          .then(({ user }) => {
+            setToken(stored);
+            setUser(user);
+          })
+          .catch(() => storeToken(null))
+      : Promise.resolve();
+    restore.finally(() => setIsLoading(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
+  useEffect(() => {
+    realtime.setToken(token);
+  }, [token]);
+
+  const login = useCallback(async (email: string, password: string) => {
     const { access_token, user } = await api.login({ email, password });
-    localStorage.setItem(TOKEN_KEY, access_token);
+    storeToken(access_token);
     setToken(access_token);
     setUser(user);
-  };
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
+  const logout = useCallback(() => {
+    storeToken(null);
     setToken(null);
     setUser(null);
-  };
+  }, []);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     if (!token) return;
     const { user } = await api.getMe(token);
     setUser(user);
-  };
+  }, [token]);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout, refreshUser }}>{children}</AuthContext.Provider>
   );
 }
 

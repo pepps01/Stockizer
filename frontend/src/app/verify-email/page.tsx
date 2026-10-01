@@ -8,22 +8,15 @@ import { api, ApiError } from "@/lib/api";
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<{ status: "loading" | "success" | "error"; error: string | null }>({ status: "loading", error: null });
+  const { status, error } = token ? outcome : { status: "error", error: "Missing verification token." };
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      setError("Missing verification token.");
-      return;
-    }
+    if (!token) return;
     api
       .verifyEmail(token)
-      .then(() => setStatus("success"))
-      .catch((err) => {
-        setStatus("error");
-        setError(err instanceof ApiError ? err.message : "Verification failed.");
-      });
+      .then(() => setOutcome({ status: "success", error: null }))
+      .catch((err) => setOutcome({ status: "error", error: err instanceof ApiError ? err.message : "Verification failed." }));
   }, [token]);
 
   return (

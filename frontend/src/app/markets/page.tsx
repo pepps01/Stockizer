@@ -1,43 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { use } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { Exchange } from "@/lib/types";
-import { ExchangeStatusBadge } from "@/components/market/ExchangeStatusBadge";
+import { useAsync } from "@/lib/use-async";
+import { CountrySelector } from "@/components/market/CountrySelector";
+import { MarketTable } from "@/components/market/MarketTable";
+import { MoversBoard } from "@/components/market/MoversBoard";
+import { ExchangeGrid } from "@/components/market/ExchangeGrid";
+import { Flag } from "@/components/ui/Flag";
+import { EmptyState, ErrorNote, PageHeader, PageShell } from "@/components/ui/primitives";
 
-export default function MarketsPage() {
-  const [exchanges, setExchanges] = useState<Exchange[] | null>(null);
+export default function MarketsPage({ searchParams }: { searchParams: Promise<{ country?: string }> }) {
+  const { country: rawCountry } = use(searchParams);
+  const country = rawCountry?.toUpperCase() || null;
+  const router = useRouter();
 
-  useEffect(() => {
-    api.listExchanges().then(({ exchanges }) => setExchanges(exchanges));
-  }, []);
+  const indices = useAsync(() => api.indices(country), [country]);
+  const movers = useAsync(() => api.movers({ country, limit: 6 }), [country]);
+  const exchanges = useAsync(() => api.exchanges(country), [country]);
+  const countryName = exchanges.data?.exchanges[0]?.country;
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-      <h1 className="mb-6 text-2xl font-semibold">Exchanges</h1>
+    <PageShell>
+      <PageHeader
+        icon={country ? <Flag code={country} size={44} /> : undefined}
+        title={country ? `${countryName ?? country} stock market` : "World stock markets"}
+        subtitle="Major indices, the day's movers and every covered exchange. Prices stream live; markets without a free feed are clearly marked as simulated."
+        actions={<CountrySelector value={country} onChange={(code) => router.replace(code ? `/markets?country=${code}` : "/markets")} />}
+      />
 
-      {!exchanges ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {exchanges.map((exchange) => (
-            <Link
-              key={exchange.code}
-              href={`/markets/${exchange.code}`}
-              className="rounded-xl border border-border bg-surface p-4 hover:border-brand transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">{exchange.name}</p>
-                  <p className="text-sm text-muted-foreground">{exchange.country}</p>
-                </div>
-                <ExchangeStatusBadge isOpen={exchange.is_open} />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </main>
+      <ErrorNote message={indices.error || movers.error || exchanges.error} />
+
+      <section className="card p-5">
+        <h2 className="mb-4 text-xl font-semibold">{country ? "Indices" : "Major world indices"}</h2>
+        {indices.data && !indices.data.indices.length ? (
+          <EmptyState title="No index tracked for this country yet" />
+        ) : (
+          <MarketTable rows={indices.data?.indices ?? null} loading={indices.loading} showCountry={!country} />
+        )}
+      </section>
+
+      <section className="mt-8">
+        <MoversBoard movers={movers.data} loading={movers.loading} />
+      </section>
+
+      <section className="mt-10">
+        <h2 className="mb-4 text-xl font-semibold">Exchanges</h2>
+        <ExchangeGrid exchanges={exchanges.data?.exchanges ?? []} />
+      </section>
+    </PageShell>
   );
 }

@@ -1,41 +1,117 @@
-class SelectorResult {
-  final String symbol;
-  final String name;
-  final String? description;
-  final String? sector;
-  final String? country;
-  final List<String> indexMemberships;
-  final String stockType;
-  final double? price;
-  final double? changePercent;
-  final double? score;
-  final String recommendedAction;
+import 'market.dart';
 
-  SelectorResult({
+/// The ticker fields every pipeline payload (selector result, optimizer run,
+/// adviser session) carries.
+class TickerBrief {
+  final String symbol;
+  final String displaySymbol;
+  final String name;
+  final String exchange;
+  final String currency;
+  final String dataSource;
+
+  const TickerBrief({
     required this.symbol,
+    required this.displaySymbol,
     required this.name,
-    this.description,
-    this.sector,
-    this.country,
-    required this.indexMemberships,
-    required this.stockType,
-    this.price,
-    this.changePercent,
-    this.score,
-    required this.recommendedAction,
+    required this.exchange,
+    required this.currency,
+    required this.dataSource,
   });
 
-  factory SelectorResult.fromJson(Map<String, dynamic> json) => SelectorResult(
+  factory TickerBrief.fromJson(Json json) => TickerBrief(
         symbol: json['symbol'] as String,
-        name: json['name'] as String,
-        description: json['description'] as String?,
-        sector: json['sector'] as String?,
-        country: json['country'] as String?,
-        indexMemberships: (json['index_memberships'] as List<dynamic>? ?? []).cast<String>(),
-        stockType: json['stock_type'] as String,
-        price: (json['price'] as num?)?.toDouble(),
-        changePercent: (json['change_percent'] as num?)?.toDouble(),
-        score: (json['score'] as num?)?.toDouble(),
-        recommendedAction: json['recommended_action'] as String,
+        displaySymbol: json['display_symbol'] as String? ?? json['symbol'] as String,
+        name: json['name'] as String? ?? '',
+        exchange: json['exchange'] as String? ?? '',
+        currency: json['currency'] as String? ?? '',
+        dataSource: json['data_source'] as String? ?? 'yahoo',
+      );
+}
+
+class SelectorMetric {
+  final String value;
+  final String label;
+  const SelectorMetric(this.value, this.label);
+}
+
+class SelectorOptions {
+  final List<SelectorMetric> metrics;
+  final String defaultStart;
+  final String defaultEnd;
+
+  const SelectorOptions({required this.metrics, required this.defaultStart, required this.defaultEnd});
+
+  factory SelectorOptions.fromJson(Json json) {
+    final period = json['default_period'] as Json? ?? const {};
+    return SelectorOptions(
+      metrics: (json['metrics'] as List<dynamic>? ?? const [])
+          .map((m) => SelectorMetric((m as Json)['value'] as String, m['label'] as String))
+          .toList(),
+      defaultStart: period['start'] as String? ?? '',
+      defaultEnd: period['end'] as String? ?? '',
+    );
+  }
+}
+
+/// One ranked ticker: `metrics` holds total_return, cagr, volatility, sharpe,
+/// sortino, max_drawdown, calmar, momentum (fractions) and prices.
+class SelectorResult {
+  final TickerBrief ticker;
+  final int rank;
+  final double score;
+  final Map<String, double> metrics;
+
+  const SelectorResult({required this.ticker, required this.rank, required this.score, required this.metrics});
+
+  double? metric(String key) => metrics[key];
+
+  factory SelectorResult.fromJson(Json json) => SelectorResult(
+        ticker: TickerBrief.fromJson(json),
+        rank: json['rank'] as int? ?? 0,
+        score: toDouble(json['score']),
+        metrics: (json['metrics'] as Json? ?? const {}).map((k, v) => MapEntry(k, toDouble(v))),
+      );
+}
+
+class SelectorRun {
+  final String id;
+  final String exchange;
+  final String exchangeName;
+  final String periodStart;
+  final String periodEnd;
+  final String metric;
+  final int topN;
+  final int universeSize;
+  final String? artifactId;
+  final String createdAt;
+  final List<SelectorResult>? results;
+
+  const SelectorRun({
+    required this.id,
+    required this.exchange,
+    required this.exchangeName,
+    required this.periodStart,
+    required this.periodEnd,
+    required this.metric,
+    required this.topN,
+    required this.universeSize,
+    this.artifactId,
+    required this.createdAt,
+    this.results,
+  });
+
+  factory SelectorRun.fromJson(Json json) => SelectorRun(
+        id: json['id'].toString(),
+        exchange: json['exchange'] as String? ?? '',
+        exchangeName: json['exchange_name'] as String? ?? '',
+        periodStart: json['period_start'] as String? ?? '',
+        periodEnd: json['period_end'] as String? ?? '',
+        metric: json['metric'] as String? ?? '',
+        topN: json['top_n'] as int? ?? 0,
+        universeSize: json['universe_size'] as int? ?? 0,
+        artifactId: json['artifact_id'] as String?,
+        createdAt: json['created_at'] as String? ?? '',
+        results: json['results'] == null ? null : listOf(json['results'], SelectorResult.fromJson),
       );
 }

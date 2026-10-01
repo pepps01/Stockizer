@@ -3,44 +3,50 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
 import '../services/api_client.dart';
+import '../services/realtime_client.dart';
 
+/// Session state — mirrors frontend/src/lib/auth-context.tsx. The JWT is kept
+/// in SharedPreferences and handed to the realtime socket so the user's
+/// Adviser signals are pushed to this device.
 class AuthProvider extends ChangeNotifier {
-  static const _tokenKey = 'tickizer_token';
+  static const _tokenKey = 'algizer_token';
+
+  AuthProvider(this._api, this._realtime);
 
   final ApiClient _api;
+  final RealtimeClient _realtime;
+
   User? user;
   String? token;
-  bool isLoading = true;
+  bool isRestoring = true;
 
-  AuthProvider(this._api) {
-    _restore();
-  }
+  bool get isSignedIn => token != null && user != null;
 
-  Future<void> _restore() async {
+  /// Restores a stored session; an expired or revoked token is discarded.
+  Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_tokenKey);
-    if (stored == null) {
-      isLoading = false;
-      notifyListeners();
-      return;
+    if (stored != null) {
+      try {
+        user = await _api.getMe(stored);
+        token = stored;
+      } on ApiException catch (e) {
+        // Keep the token when the server is merely unreachable; drop it when rejected.
+        if (e.statusCode != 0) await prefs.remove(_tokenKey);
+      }
     }
-    token = stored;
-    try {
-      user = await _api.getMe(stored);
-    } catch (_) {
-      await prefs.remove(_tokenKey);
-      token = null;
-    }
-    isLoading = false;
+    _realtime.setToken(token);
+    isRestoring = false;
     notifyListeners();
   }
 
   Future<void> login(String email, String password) async {
-    final (accessToken, loggedInUser) = await _api.login(email, password);
+    final (accessToken, loggedInUser) = await _api.login(email.trim(), password);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, accessToken);
     token = accessToken;
     user = loggedInUser;
+    _realtime.setToken(token);
     notifyListeners();
   }
 
@@ -49,12 +55,18 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove(_tokenKey);
     token = null;
     user = null;
+    _realtime.setToken(null);
     notifyListeners();
   }
 
   Future<void> refreshUser() async {
     if (token == null) return;
     user = await _api.getMe(token!);
+    notifyListeners();
+  }
+
+  void setUser(User updated) {
+    user = updated;
     notifyListeners();
   }
 }

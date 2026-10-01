@@ -1,139 +1,564 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../format.dart';
 import '../models/market.dart';
+import '../models/strategy.dart';
+import '../navigation.dart';
 import '../services/api_client.dart';
+import '../state/auth_provider.dart';
+import '../state/shell_controller.dart';
 import '../theme.dart';
 import '../widgets/action_buttons.dart';
+import '../widgets/badges.dart';
+import '../widgets/common.dart';
+import '../widgets/exchange_status_badge.dart';
+import '../widgets/flag.dart';
+import '../widgets/live_quotes.dart';
 import '../widgets/price_chart.dart';
 
-class TickerDetailScreen extends StatefulWidget {
+const _ranges = ['1M', '3M', '6M', 'YTD', '1Y', '5Y'];
+const _tabular = [FontFeature.tabularFigures()];
+
+/// Symbol page (frontend /symbols/[symbol]): live quote, chart, statistics,
+/// the Adviser's current signal and the technical rating.
+class SymbolScreen extends StatefulWidget {
+  const SymbolScreen({super.key, required this.symbol});
+
   final String symbol;
-  const TickerDetailScreen({super.key, required this.symbol});
 
   @override
-  State<TickerDetailScreen> createState() => _TickerDetailScreenState();
+  State<SymbolScreen> createState() => _SymbolScreenState();
 }
 
-class _TickerDetailScreenState extends State<TickerDetailScreen> {
-  final _api = ApiClient();
-  late Future<Ticker> _tickerFuture;
-  late Future<List<PricePoint>> _historyFuture;
+class _SymbolScreenState extends State<SymbolScreen> {
+  late Future<SymbolDetail> _detail;
+  late Future<List<Bar>> _history;
+  String _range = '1Y';
 
   @override
   void initState() {
     super.initState();
-    _tickerFuture = _api.getTicker(widget.symbol);
-    _historyFuture = _api.getTickerHistory(widget.symbol, period: '3mo');
+    _load();
   }
+
+  void _load() {
+    final api = context.read<ApiClient>();
+    _detail = api.symbol(widget.symbol);
+    _history = api.history(widget.symbol, _range);
+  }
+
+  void _setRange(String range) => setState(() {
+        _range = range;
+        _history = context.read<ApiClient>().history(widget.symbol, range);
+      });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.symbol)),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FutureBuilder<Ticker>(
-              future: _tickerFuture,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                final ticker = snapshot.data!;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: AppBar(
+        title: Text(widget.symbol),
+        actions: [WatchlistButton(symbol: widget.symbol)],
+      ),
+      body: FutureBuilder<SymbolDetail>(
+        future: _detail,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ListView(padding: const EdgeInsets.all(16), children: [ErrorNote(errorMessage(snapshot.error), onRetry: () => setState(_load))]);
+          }
+          final d = snapshot.data;
+          if (d == null) {
+            return ListView(padding: const EdgeInsets.all(16), children: const [Skeleton(height: 110), SizedBox(height: 16), Skeleton(height: 280)]);
+          }
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(_load);
+              await _detail.then<void>((_) {}, onError: (_) {});
+            },
+            child: LiveQuotes(
+              symbols: [d.ticker.symbol],
+              builder: (context, live) {
+                final quote = live[d.ticker.symbol] ?? d.quote;
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
                   children: [
-                    Text(ticker.name, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(formatPrice(ticker.price, ticker.currency ?? 'USD'), style: Theme.of(context).textTheme.headlineSmall),
-                        const SizedBox(width: 8),
-                        Text(
-                          formatPercent(ticker.changePercent),
-                          style: TextStyle(color: changeColor(context, ticker.changePercent), fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    if (ticker.description != null) ...[
-                      const SizedBox(height: 8),
-                      Text(ticker.description!, style: Theme.of(context).textTheme.bodySmall),
+                    _Header(detail: d, quote: quote),
+                    if (isSimulated(d.ticker.dataSource)) ...[
+                      const SizedBox(height: 12),
+                      Notice(
+                        'No free live data feed covers ${d.exchange.name}, so this price series is generated by a deterministic model for demonstration. Don’t trade on it.',
+                        tone: NoticeTone.hold,
+                        icon: Icons.science_outlined,
+                      ),
                     ],
-                    const SizedBox(height: 8),
-                    Wrap(spacing: 12, children: [
-                      if (ticker.sector != null) Text('Sector: ${ticker.sector}', style: Theme.of(context).textTheme.bodySmall),
-                      if (ticker.country != null) Text('Country: ${ticker.country}', style: Theme.of(context).textTheme.bodySmall),
-                    ]),
-                    const SizedBox(height: 12),
-                    ActionButtons(symbol: ticker.symbol),
+                    const SizedBox(height: 16),
+                    SectionCard(
+                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Segmented<String>(value: _range, options: [for (final r in _ranges) (r, r)], onChanged: _setRange),
+                          const SizedBox(height: 14),
+                          AsyncView<List<Bar>>(
+                            future: _history,
+                            loading: const Skeleton(height: 240),
+                            builder: (context, bars) => PriceChart(bars: bars),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SignalCard(ticker: d.ticker),
+                    const SizedBox(height: 16),
+                    if (d.ticker.kind == 'stock') ...[
+                      SectionCard(
+                        title: 'Your decision',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Record what you did in your journal. Algizer never places orders.',
+                              style: TextStyle(fontSize: 12.5, color: context.palette.mutedForeground),
+                            ),
+                            const SizedBox(height: 10),
+                            JournalButtons(symbol: d.ticker.symbol),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    _Statistics(detail: d, quote: quote),
+                    const SizedBox(height: 16),
+                    TechnicalsCard(technicals: d.technicals),
                   ],
                 );
               },
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: FutureBuilder<List<PricePoint>>(
-                future: _historyFuture,
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const SizedBox(height: 240, child: Center(child: CircularProgressIndicator()));
-                  }
-                  return PriceChart(points: snapshot.data!, height: 240);
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            FutureBuilder<Ticker>(
-              future: _tickerFuture,
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const SizedBox.shrink();
-                final t = snapshot.data!;
-                return _FinancialsGrid(ticker: t);
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _FinancialsGrid extends StatelessWidget {
-  final Ticker ticker;
-  const _FinancialsGrid({required this.ticker});
+class _Header extends StatelessWidget {
+  const _Header({required this.detail, required this.quote});
+
+  final SymbolDetail detail;
+  final Quote? quote;
 
   @override
   Widget build(BuildContext context) {
-    final stats = [
-      ('P/E ratio', ticker.peRatio?.toStringAsFixed(2) ?? '—'),
-      ('Market cap', formatCompact(ticker.marketCap)),
-      ('EPS', formatPrice(ticker.eps)),
-      ('Dividend yield', formatPercent(ticker.dividendYield)),
-      ('52w high', formatPrice(ticker.fiftyTwoWeekHigh)),
-      ('52w low', formatPrice(ticker.fiftyTwoWeekLow)),
-    ];
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 3,
-      children: stats
-          .map((s) => Column(
+    final p = context.palette;
+    final t = detail.ticker;
+    final unit = t.isIndex ? '' : currencyLabel(t.currency);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flag(code: t.countryCode, size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.$1, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  Text(s.$2, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(t.name, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, height: 1.2)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SymbolChip(t.displaySymbol),
+                      InkWell(
+                        onTap: () => openExchange(context, detail.exchange.code),
+                        child: Text(detail.exchange.name, style: TextStyle(fontSize: 12.5, color: p.brand)),
+                      ),
+                      if (t.sector != null) Text('· ${t.sector}', style: TextStyle(fontSize: 12.5, color: p.mutedForeground)),
+                      SourceBadge(source: t.dataSource),
+                    ],
+                  ),
                 ],
-              ))
-          .toList(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(formatNumber(quote?.price), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, fontFeatures: _tabular)),
+            if (unit.isNotEmpty) Text(' $unit', style: TextStyle(fontSize: 14, color: p.mutedForeground)),
+            const SizedBox(width: 12),
+            ChangeText(quote?.changePercent, change: quote?.change, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            MarketStatus(open: quote?.marketOpen ?? false),
+            Text(
+              'As of ${quote?.asOf ?? '—'}${isSimulated(t.dataSource) ? ' · simulated feed' : ' · Yahoo Finance (may be delayed)'}',
+              style: TextStyle(fontSize: 11.5, color: p.mutedForeground),
+            ),
+          ],
+        ),
+      ],
     );
   }
+}
+
+class _Statistics extends StatelessWidget {
+  const _Statistics({required this.detail, required this.quote});
+
+  final SymbolDetail detail;
+  final Quote? quote;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final f = detail.fundamentals;
+    final unit = detail.ticker.isIndex ? '' : currencyLabel(detail.ticker.currency);
+    return SectionCard(
+      title: 'Key statistics',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TwoColumnGrid(
+            children: [
+              Stat(label: 'Open', value: formatNumber(quote?.open)),
+              Stat(label: 'Day range', value: '${formatNumber(quote?.low)} – ${formatNumber(quote?.high)}'),
+              Stat(label: '52-week range', value: '${formatNumber(f.fiftyTwoWeekLow)} – ${formatNumber(f.fiftyTwoWeekHigh)}'),
+              Stat(label: 'Volume', value: formatCompact(quote?.volume)),
+              if (detail.ticker.kind == 'stock') ...[
+                Stat(label: 'Market cap', value: '${formatCompact(f.marketCap)} $unit'.trim()),
+                Stat(label: 'P/E (TTM)', value: formatNumber(f.peRatio, 2)),
+                Stat(label: 'EPS (TTM)', value: formatNumber(f.eps)),
+                Stat(label: 'Dividend yield', value: f.dividendYield == null ? '—' : '${f.dividendYield!.toStringAsFixed(2)}%'),
+                Stat(label: 'Beta', value: formatNumber(f.beta, 2)),
+                Stat(label: 'Avg volume (30D)', value: formatCompact(f.avgVolume30d)),
+                Stat(label: 'Employees', value: formatCompact(f.employees)),
+                Stat(label: 'Industry', value: f.industry ?? '—'),
+              ],
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Text('Performance', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.9,
+            children: [
+              for (final entry in Performance.periods.entries)
+                Container(
+                  decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ChangeText(detail.performance[entry.key], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      Text(entry.value, style: TextStyle(fontSize: 11, color: p.mutedForeground)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (f.description != null && f.description!.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            const Text('About', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(f.description!, style: TextStyle(fontSize: 13.5, height: 1.45, color: p.mutedForeground)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+const monitorIntervals = [(60, 'Every minute'), (300, 'Every 5 minutes'), (900, 'Every 15 minutes'), (3600, 'Hourly'), (86400, 'Daily')];
+
+/// The Adviser's current decision for a symbol, plus one-tap monitoring.
+class SignalCard extends StatefulWidget {
+  const SignalCard({super.key, required this.ticker});
+
+  final TickerInfo ticker;
+
+  @override
+  State<SignalCard> createState() => _SignalCardState();
+}
+
+class _SignalCardState extends State<SignalCard> {
+  late final Future<(AdviserSignal, String?)> _signal =
+      context.read<ApiClient>().signal(widget.ticker.symbol, token: context.read<AuthProvider>().token);
+  int _interval = 300;
+  bool _starting = false;
+
+  Future<void> _monitor(String? optimizerRunId) async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    setState(() => _starting = true);
+    try {
+      await context.read<ApiClient>().createSession(token, symbol: widget.ticker.symbol, intervalSec: _interval, optimizerRunId: optimizerRunId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Monitoring started — signals will appear in the Adviser and as notifications.'),
+          action: SnackBarAction(label: 'Adviser', onPressed: () => openStrategy(context, const StrategyIntent.adviser())),
+        ),
+      );
+    } catch (e) {
+      if (mounted) showSnack(context, errorMessage(e), error: true);
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = widget.ticker;
+    return SectionCard(
+      title: 'Adviser signal',
+      child: AsyncView<(AdviserSignal, String?)>(
+        future: _signal,
+        loading: const Skeleton(height: 140),
+        builder: (context, data) {
+          final (signal, runId) = data;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  SignalBadge(type: signal.signalType, size: BadgeSize.lg),
+                  const Spacer(),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${(signal.confidence * 100).toStringAsFixed(0)}%', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+                      Text('confidence', style: TextStyle(fontSize: 11.5, color: p.mutedForeground)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ScoreBar(score: signal.score, threshold: signal.threshold),
+              const SizedBox(height: 12),
+              Text(signal.reason, style: TextStyle(fontSize: 13.5, color: p.mutedForeground, height: 1.4)),
+              const SizedBox(height: 12),
+              TwoColumnGrid(
+                spacing: 8,
+                children: [
+                  Stat(label: 'Trend', value: '${formatSigned(signal.trend, 2)}σ'),
+                  Stat(label: 'Stretch', value: '${formatSigned(signal.z, 2)}σ'),
+                  Stat(label: 'Price', value: formatPrice(signal.price, t.priceCurrency)),
+                  Stat(label: 'As of', value: signal.asOf),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                runId != null ? 'Using your optimised parameters.' : 'Using default parameters.',
+                style: TextStyle(fontSize: 12.5, color: p.mutedForeground),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  onPressed: () => openStrategy(context, StrategyIntent.optimizer(symbol: t.symbol)),
+                  child: Text('Optimise for ${t.displaySymbol} →'),
+                ),
+              ),
+              const Divider(height: 20),
+              DropdownButtonFormField<int>(
+                initialValue: _interval,
+                decoration: const InputDecoration(labelText: 'Monitoring interval'),
+                items: [for (final (value, label) in monitorIntervals) DropdownMenuItem(value: value, child: Text(label))],
+                onChanged: (v) => setState(() => _interval = v ?? _interval),
+              ),
+              const SizedBox(height: 10),
+              BusyButton(
+                label: 'Monitor with Adviser',
+                icon: Icons.notifications_active_outlined,
+                busy: _starting,
+                onPressed: () => _monitor(runId),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Score S ∈ [−1, 1] on a red → orange → green bar, with the ±θ decision band.
+class ScoreBar extends StatelessWidget {
+  const ScoreBar({super.key, required this.score, required this.threshold});
+
+  final double score;
+  final double threshold;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    double pos(double v) => ((v.clamp(-1.0, 1.0) + 1) / 2);
+    return Column(
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            return SizedBox(
+              height: 18,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.centerLeft,
+                children: [
+                  Container(
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      gradient: LinearGradient(colors: [p.loss, p.hold, p.gain]),
+                    ),
+                  ),
+                  for (final band in [-threshold, threshold])
+                    Positioned(left: w * pos(band) - 1, top: 1, child: Container(width: 2, height: 16, color: p.surface.withValues(alpha: 0.85))),
+                  Positioned(
+                    left: w * pos(score) - 3,
+                    child: Container(width: 6, height: 18, decoration: BoxDecoration(color: p.foreground, borderRadius: BorderRadius.circular(3))),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Text('SELL −1', style: TextStyle(fontSize: 10, color: p.mutedForeground)),
+            Expanded(
+              child: Text(
+                'score ${formatSigned(score, 2)} · θ ±${threshold.toStringAsFixed(2)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10, color: p.mutedForeground),
+              ),
+            ),
+            Text('BUY +1', style: TextStyle(fontSize: 10, color: p.mutedForeground)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+const _indicatorLabels = {
+  'rsi14': 'RSI (14)',
+  'stoch_k': 'Stochastic %K',
+  'cci20': 'CCI (20)',
+  'macd': 'MACD (12, 26)',
+  'williams_r': 'Williams %R',
+  'sma50': 'SMA (50)',
+  'sma200': 'SMA (200)',
+  'ema20': 'EMA (20)',
+};
+
+class TechnicalsCard extends StatelessWidget {
+  const TechnicalsCard({super.key, required this.technicals});
+
+  final Technicals technicals;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    Widget rating(String title, String? label) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              children: [
+                Text(title, style: TextStyle(fontSize: 11.5, color: p.mutedForeground)),
+                const SizedBox(height: 2),
+                RatingLabel(label: label),
+              ],
+            ),
+          ),
+        );
+    return SectionCard(
+      title: 'Technicals',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: SizedBox(
+              width: 200,
+              height: 112,
+              child: CustomPaint(painter: _GaugePainter(value: technicals.summary ?? 0, palette: p)),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Center(child: RatingLabel(label: technicals.label, fontSize: 17)),
+          const SizedBox(height: 14),
+          Row(children: [rating('Moving averages', technicals.maLabel), const SizedBox(width: 10), rating('Oscillators', technicals.oscLabel)]),
+          const SizedBox(height: 12),
+          for (final entry in _indicatorLabels.entries)
+            if (technicals.indicators[entry.key] != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Text(entry.value, style: TextStyle(fontSize: 13, color: p.mutedForeground)),
+                    const Spacer(),
+                    Text(formatNumber(technicals.indicators[entry.key], 2), style: const TextStyle(fontSize: 13, fontFeatures: _tabular)),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Semicircle needle gauge from Strong sell (−1) to Strong buy (+1).
+class _GaugePainter extends CustomPainter {
+  _GaugePainter({required this.value, required this.palette});
+
+  final double value;
+  final AppPalette palette;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height - 8);
+    final radius = math.min(size.width / 2, size.height) - 10;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        startAngle: math.pi,
+        endAngle: 2 * math.pi,
+        colors: [palette.loss, palette.mutedForeground, palette.gain],
+      ).createShader(rect);
+    canvas.drawArc(rect, math.pi, math.pi, false, arc);
+
+    final angle = math.pi * (1 - (value.clamp(-1.0, 1.0) + 1) / 2);
+    final tip = center + Offset(math.cos(angle), -math.sin(angle)) * (radius - 8);
+    final needle = Paint()
+      ..color = palette.foreground
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(center, tip, needle);
+    canvas.drawCircle(center, 5, Paint()..color = palette.foreground);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GaugePainter old) => old.value != value || old.palette != palette;
 }

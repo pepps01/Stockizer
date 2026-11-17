@@ -1,0 +1,37 @@
+# Render Blueprint: the Stockiser API (Flask) on the free web service plan.
+# Secrets marked sync: false are entered in the Render dashboard on first deploy.
+services:
+  - type: web
+    name: stockiser-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false  # TiDB: mysql+pymysql://USER:PASS@HOST:4000/stockiser?ssl_ca=/etc/ssl/certs/ca-certificates.crt&ssl_verify_cert=true&ssl_verify_identity=true
+      - key: CORS_ORIGINS
+        sync: false  # e.g. https://stockiser.vercel.app
+      - key: FRONTEND_URL
+        sync: false  # same as the Vercel URL
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "0"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: ADVISER_WORKER
+        value: "1"

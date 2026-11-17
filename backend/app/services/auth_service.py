@@ -29,6 +29,7 @@ class AuthService(IAuthService):
         secret_key: str,
         salt: str,
         max_age_seconds: int,
+        require_verification: bool = True,
     ):
         self._users = users
         self._catalog = catalog
@@ -37,6 +38,7 @@ class AuthService(IAuthService):
         self._serializer = URLSafeTimedSerializer(secret_key)
         self._salt = salt
         self._max_age_seconds = max_age_seconds
+        self._require_verification = require_verification
 
     def register(self, *, first_name: str, last_name: str, email: str, password: str, client: ClientInfo | None = None) -> dict:
         missing = [n for n, v in (("first_name", first_name), ("last_name", last_name), ("email", email), ("password", password)) if not v]
@@ -49,11 +51,19 @@ class AuthService(IAuthService):
         if self._users.get_by_email(email):
             raise ConflictError("An account with this email already exists")
 
-        user = self._users.create(first_name=first_name, last_name=last_name, email=email, password_hash=generate_password_hash(password))
+        user = self._users.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password_hash=generate_password_hash(password),
+            is_verified=not self._require_verification,
+        )
         self._uow.flush()
         self._record(user, "register", client)
         self._uow.commit()
-        self._email.send_verification_email(to=user.email, first_name=user.first_name, token=self._serializer.dumps(user.email, salt=self._salt))
+        if self._require_verification:
+            token = self._serializer.dumps(user.email, salt=self._salt)
+            self._email.send_verification_email(to=user.email, first_name=user.first_name, token=token)
         return user.to_dict()
 
     def verify_email(self, token: str) -> dict:

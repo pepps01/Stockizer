@@ -6,8 +6,7 @@ double? toDoubleOrNull(Object? value) => (value as num?)?.toDouble();
 
 double toDouble(Object? value) => (value as num?)?.toDouble() ?? 0;
 
-List<T> listOf<T>(Object? value, T Function(Json) parse) =>
-    (value as List<dynamic>? ?? const []).map((e) => parse(e as Json)).toList();
+List<T> listOf<T>(Object? value, T Function(Json) parse) => (value as List<dynamic>? ?? const []).map((e) => parse(e as Json)).toList();
 
 /// `yahoo` feeds are real (possibly delayed); `synthetic` series are simulated
 /// and must always be badged as such.
@@ -23,12 +22,12 @@ class Country {
   const Country({required this.code, required this.name, required this.region, required this.currency, required this.exchangeCount});
 
   factory Country.fromJson(Json json) => Country(
-        code: json['code'] as String,
-        name: json['name'] as String,
-        region: json['region'] as String? ?? '',
-        currency: json['currency'] as String? ?? '',
-        exchangeCount: json['exchange_count'] as int? ?? 0,
-      );
+    code: json['code'] as String,
+    name: json['name'] as String,
+    region: json['region'] as String? ?? '',
+    currency: json['currency'] as String? ?? '',
+    exchangeCount: json['exchange_count'] as int? ?? 0,
+  );
 }
 
 class Exchange {
@@ -67,22 +66,22 @@ class Exchange {
   });
 
   factory Exchange.fromJson(Json json) => Exchange(
-        id: json['id'].toString(),
-        code: json['code'] as String,
-        name: json['name'] as String,
-        countryCode: json['country_code'] as String? ?? '',
-        country: json['country'] as String? ?? '',
-        region: json['region'] as String? ?? '',
-        timezone: json['timezone'] as String? ?? '',
-        opensAt: json['opens_at'] as String? ?? '',
-        closesAt: json['closes_at'] as String? ?? '',
-        tradingDays: (json['trading_days'] as List<dynamic>? ?? const []).cast<int>(),
-        currency: json['currency'] as String? ?? '',
-        dataSource: json['data_source'] as String? ?? 'yahoo',
-        isOpen: json['is_open'] as bool? ?? false,
-        localTime: json['local_time'] as String? ?? '',
-        stockCount: json['stock_count'] as int?,
-      );
+    id: json['id'].toString(),
+    code: json['code'] as String,
+    name: json['name'] as String,
+    countryCode: json['country_code'] as String? ?? '',
+    country: json['country'] as String? ?? '',
+    region: json['region'] as String? ?? '',
+    timezone: json['timezone'] as String? ?? '',
+    opensAt: json['opens_at'] as String? ?? '',
+    closesAt: json['closes_at'] as String? ?? '',
+    tradingDays: (json['trading_days'] as List<dynamic>? ?? const []).cast<int>(),
+    currency: json['currency'] as String? ?? '',
+    dataSource: json['data_source'] as String? ?? 'yahoo',
+    isOpen: json['is_open'] as bool? ?? false,
+    localTime: json['local_time'] as String? ?? '',
+    stockCount: json['stock_count'] as int?,
+  );
 }
 
 class Quote {
@@ -117,20 +116,20 @@ class Quote {
   });
 
   factory Quote.fromJson(Json json) => Quote(
-        symbol: json['symbol'] as String,
-        price: toDouble(json['price']),
-        prevClose: toDoubleOrNull(json['prev_close']),
-        change: toDoubleOrNull(json['change']),
-        changePercent: toDoubleOrNull(json['change_percent']),
-        open: toDouble(json['open']),
-        high: toDouble(json['high']),
-        low: toDouble(json['low']),
-        volume: toDouble(json['volume']),
-        asOf: json['as_of']?.toString() ?? '',
-        currency: json['currency'] as String? ?? '',
-        source: json['source'] as String? ?? 'yahoo',
-        marketOpen: json['market_open'] as bool? ?? false,
-      );
+    symbol: json['symbol'] as String,
+    price: toDouble(json['price']),
+    prevClose: toDoubleOrNull(json['prev_close']),
+    change: toDoubleOrNull(json['change']),
+    changePercent: toDoubleOrNull(json['change_percent']),
+    open: toDouble(json['open']),
+    high: toDouble(json['high']),
+    low: toDouble(json['low']),
+    volume: toDouble(json['volume']),
+    asOf: json['as_of']?.toString() ?? '',
+    currency: json['currency'] as String? ?? '',
+    source: json['source'] as String? ?? 'yahoo',
+    marketOpen: json['market_open'] as bool? ?? false,
+  );
 }
 
 class TickerInfo {
@@ -147,6 +146,9 @@ class TickerInfo {
   final String country;
   final String countryCode;
 
+  /// The company's logo (its site icon), when the server knows its website.
+  final String? logoUrl;
+
   const TickerInfo({
     required this.id,
     required this.symbol,
@@ -160,6 +162,7 @@ class TickerInfo {
     required this.exchangeName,
     required this.country,
     required this.countryCode,
+    this.logoUrl,
   });
 
   bool get isIndex => kind == 'index';
@@ -168,19 +171,20 @@ class TickerInfo {
   String? get priceCurrency => isIndex ? null : currency;
 
   factory TickerInfo.fromJson(Json json) => TickerInfo(
-        id: json['id']?.toString() ?? '',
-        symbol: json['symbol'] as String,
-        displaySymbol: json['display_symbol'] as String? ?? json['symbol'] as String,
-        name: json['name'] as String? ?? json['symbol'] as String,
-        sector: json['sector'] as String?,
-        kind: json['kind'] as String? ?? 'stock',
-        currency: json['currency'] as String? ?? '',
-        dataSource: json['data_source'] as String? ?? 'yahoo',
-        exchange: json['exchange'] as String? ?? '',
-        exchangeName: json['exchange_name'] as String? ?? '',
-        country: json['country'] as String? ?? '',
-        countryCode: json['country_code'] as String? ?? '',
-      );
+    id: json['id']?.toString() ?? '',
+    symbol: json['symbol'] as String,
+    displaySymbol: json['display_symbol'] as String? ?? json['symbol'] as String,
+    name: json['name'] as String? ?? json['symbol'] as String,
+    sector: json['sector'] as String?,
+    kind: json['kind'] as String? ?? 'stock',
+    currency: json['currency'] as String? ?? '',
+    dataSource: json['data_source'] as String? ?? 'yahoo',
+    exchange: json['exchange'] as String? ?? '',
+    exchangeName: json['exchange_name'] as String? ?? '',
+    country: json['country'] as String? ?? '',
+    countryCode: json['country_code'] as String? ?? '',
+    logoUrl: json['logo_url'] as String?,
+  );
 }
 
 class Technicals {
@@ -192,7 +196,15 @@ class Technicals {
   final String? oscLabel;
   final Map<String, double?> indicators;
 
-  const Technicals({this.summary, this.label, this.movingAverages, this.maLabel, this.oscillators, this.oscLabel, this.indicators = const {}});
+  const Technicals({
+    this.summary,
+    this.label,
+    this.movingAverages,
+    this.maLabel,
+    this.oscillators,
+    this.oscLabel,
+    this.indicators = const {},
+  });
 
   factory Technicals.fromJson(Json? json) {
     if (json == null) return const Technicals();
@@ -217,8 +229,7 @@ class Performance {
 
   double? operator [](String key) => values[key];
 
-  factory Performance.fromJson(Json? json) =>
-      Performance((json ?? const {}).map((k, v) => MapEntry(k, toDoubleOrNull(v))));
+  factory Performance.fromJson(Json? json) => Performance((json ?? const {}).map((k, v) => MapEntry(k, toDoubleOrNull(v))));
 }
 
 /// A ticker plus its quote, technical rating and performance — one row of a market table.
@@ -233,11 +244,11 @@ class MarketRow {
   String get symbol => info.symbol;
 
   factory MarketRow.fromJson(Json json) => MarketRow(
-        info: TickerInfo.fromJson(json),
-        quote: json['quote'] == null ? null : Quote.fromJson(json['quote'] as Json),
-        technicals: Technicals.fromJson(json['technicals'] as Json?),
-        performance: Performance.fromJson(json['performance'] as Json?),
-      );
+    info: TickerInfo.fromJson(json),
+    quote: json['quote'] == null ? null : Quote.fromJson(json['quote'] as Json),
+    technicals: Technicals.fromJson(json['technicals'] as Json?),
+    performance: Performance.fromJson(json['performance'] as Json?),
+  );
 }
 
 class Movers {
@@ -247,17 +258,23 @@ class Movers {
   final List<MarketRow> losers;
   final int universeSize;
 
-  const Movers({required this.highestVolume, required this.mostVolatile, required this.gainers, required this.losers, required this.universeSize});
+  const Movers({
+    required this.highestVolume,
+    required this.mostVolatile,
+    required this.gainers,
+    required this.losers,
+    required this.universeSize,
+  });
 
   Iterable<String> get symbols => [...highestVolume, ...mostVolatile, ...gainers, ...losers].map((r) => r.symbol);
 
   factory Movers.fromJson(Json json) => Movers(
-        highestVolume: listOf(json['highest_volume'], MarketRow.fromJson),
-        mostVolatile: listOf(json['most_volatile'], MarketRow.fromJson),
-        gainers: listOf(json['gainers'], MarketRow.fromJson),
-        losers: listOf(json['losers'], MarketRow.fromJson),
-        universeSize: json['universe_size'] as int? ?? 0,
-      );
+    highestVolume: listOf(json['highest_volume'], MarketRow.fromJson),
+    mostVolatile: listOf(json['most_volatile'], MarketRow.fromJson),
+    gainers: listOf(json['gainers'], MarketRow.fromJson),
+    losers: listOf(json['losers'], MarketRow.fromJson),
+    universeSize: json['universe_size'] as int? ?? 0,
+  );
 }
 
 class ExchangeListing {
@@ -268,10 +285,10 @@ class ExchangeListing {
   const ExchangeListing({required this.exchange, required this.indices, required this.stocks});
 
   factory ExchangeListing.fromJson(Json json) => ExchangeListing(
-        exchange: Exchange.fromJson(json['exchange'] as Json),
-        indices: listOf(json['indices'], MarketRow.fromJson),
-        stocks: listOf(json['stocks'], MarketRow.fromJson),
-      );
+    exchange: Exchange.fromJson(json['exchange'] as Json),
+    indices: listOf(json['indices'], MarketRow.fromJson),
+    stocks: listOf(json['stocks'], MarketRow.fromJson),
+  );
 }
 
 class Fundamentals {
@@ -337,13 +354,13 @@ class SymbolDetail {
   });
 
   factory SymbolDetail.fromJson(Json json) => SymbolDetail(
-        ticker: TickerInfo.fromJson(json['ticker'] as Json),
-        exchange: Exchange.fromJson(json['exchange'] as Json),
-        quote: json['quote'] == null ? null : Quote.fromJson(json['quote'] as Json),
-        fundamentals: Fundamentals.fromJson(json['fundamentals'] as Json?),
-        technicals: Technicals.fromJson(json['technicals'] as Json?),
-        performance: Performance.fromJson(json['performance'] as Json?),
-      );
+    ticker: TickerInfo.fromJson(json['ticker'] as Json),
+    exchange: Exchange.fromJson(json['exchange'] as Json),
+    quote: json['quote'] == null ? null : Quote.fromJson(json['quote'] as Json),
+    fundamentals: Fundamentals.fromJson(json['fundamentals'] as Json?),
+    technicals: Technicals.fromJson(json['technicals'] as Json?),
+    performance: Performance.fromJson(json['performance'] as Json?),
+  );
 }
 
 class Bar {
@@ -357,11 +374,11 @@ class Bar {
   const Bar({required this.time, required this.open, required this.high, required this.low, required this.close, required this.volume});
 
   factory Bar.fromJson(Json json) => Bar(
-        time: json['time'].toString(),
-        open: toDouble(json['open']),
-        high: toDouble(json['high']),
-        low: toDouble(json['low']),
-        close: toDouble(json['close']),
-        volume: toDouble(json['volume']),
-      );
+    time: json['time'].toString(),
+    open: toDouble(json['open']),
+    high: toDouble(json['high']),
+    low: toDouble(json['low']),
+    close: toDouble(json['close']),
+    volume: toDouble(json['volume']),
+  );
 }

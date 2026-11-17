@@ -6,6 +6,8 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from app.domain.client import ClientInfo
+
 
 class IEmailService(ABC):
     @abstractmethod
@@ -80,16 +82,17 @@ class IMarketBoard(ABC):
 
 class IAuthService(ABC):
     @abstractmethod
-    def register(self, *, first_name: str, last_name: str, email: str, password: str) -> dict: ...
+    def register(self, *, first_name: str, last_name: str, email: str, password: str, client: ClientInfo | None = None) -> dict: ...
 
     @abstractmethod
     def verify_email(self, token: str) -> dict: ...
 
     @abstractmethod
-    def login(self, *, email: str, password: str) -> dict: ...
+    def login(self, *, email: str, password: str, client: ClientInfo | None = None) -> dict: ...
 
     @abstractmethod
-    def get_profile(self, user_id: str) -> dict: ...
+    def get_profile(self, user_id: str, client: ClientInfo | None = None) -> dict:
+        """With a client, an app launch on a saved session is logged as a 'resume'."""
 
     @abstractmethod
     def update_profile(self, user_id: str, data: dict) -> dict: ...
@@ -219,6 +222,9 @@ class IAdminService(ABC):
 
     @abstractmethod
     def update_user(self, admin_id: str, user_id: str, changes: dict) -> dict: ...
+
+    @abstractmethod
+    def user_access(self, user_id: str, limit: int = 20) -> list[dict]: ...
 
     @abstractmethod
     def list_sessions(self, *, status: str | None, limit: int = 200) -> list[dict]: ...

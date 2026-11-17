@@ -122,3 +122,13 @@ def test_assumptions_are_saved_replaced_and_cleared(client, auth_headers):
 
     assert client.delete("/api/assumptions/MTNN.NGX", headers=auth_headers).status_code == 204
     assert [a["symbol"] for a in client.get("/api/assumptions", headers=auth_headers).get_json()["assumptions"]] == ["DANGCEM.NGX"]
+
+
+def test_logo_domain_and_url():
+    from app.models.market import Ticker, logo_domain
+
+    assert logo_domain("https://www.apple.com/uk/") == "apple.com"
+    assert logo_domain("mtn.ng") == "mtn.ng"
+    assert logo_domain(None) is None
+    assert Ticker(website="https://www.safaricom.co.ke").logo_url == "https://www.google.com/s2/favicons?domain=safaricom.co.ke&sz=128"
+    assert Ticker().logo_url is None

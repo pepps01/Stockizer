@@ -16,6 +16,7 @@ import '../widgets/common.dart';
 import '../widgets/live_quotes.dart';
 import '../widgets/market_widgets.dart';
 import '../widgets/motion.dart';
+import '../widgets/ticker_logo.dart';
 
 /// Home (approved minimalist design): the headline index with an edge-to-edge
 /// line, two more markets, the latest signals, the Adviser's state and the
@@ -70,7 +71,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final p = context.palette;
     final user = context.watch<AuthProvider>().user;
-    final shell = context.read<ShellController>();
     final settings = context.watch<SettingsController>();
     return Scaffold(
       body: SafeArea(
@@ -133,7 +133,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(child: Text('LATEST SIGNALS', style: labelCaps(p))),
                     TextButton(
                       style: TextButton.styleFrom(foregroundColor: p.foreground),
-                      onPressed: () => shell.select(ShellTab.signals),
+                      onPressed: () => openSignals(context),
                       child: const Text('All →'),
                     ),
                   ],
@@ -465,6 +465,8 @@ class _SignalRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
+            TickerLogo(symbol: signal.displaySymbol, logoUrl: signal.logoUrl, size: 38),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

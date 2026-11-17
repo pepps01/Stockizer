@@ -15,7 +15,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/signal_tile.dart';
 
-/// The Signals tab: every signal the Adviser has emitted for this user,
+/// The Signals page (opened from Home and Strategy): every signal the Adviser has emitted for this user,
 /// newest first and grouped by day, updated live over the socket.
 class SignalsScreen extends StatefulWidget {
   const SignalsScreen({super.key});
@@ -88,8 +88,10 @@ class _SignalsScreenState extends State<SignalsScreen> {
     }
 
     return Scaffold(
+      appBar: Navigator.of(context).canPop() ? AppBar(toolbarHeight: 48) : null,
       body: SafeArea(
         bottom: false,
+        top: !Navigator.of(context).canPop(),
         child: RefreshIndicator(
           onRefresh: _load,
           child: ListView(
@@ -97,15 +99,24 @@ class _SignalsScreenState extends State<SignalsScreen> {
             children: [
               Row(
                 children: [
-                  const Expanded(child: Text('Signals', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700))),
+                  const Expanded(
+                    child: Text('Signals', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+                  ),
                   if (active.isNotEmpty) ...[
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(color: p.gain, shape: BoxShape.circle, boxShadow: [BoxShadow(color: p.gainSoft, spreadRadius: 4)]),
+                      decoration: BoxDecoration(
+                        color: p.gain,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: p.gainSoft, spreadRadius: 4)],
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    Text('Live', style: TextStyle(color: p.gain, fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(
+                      'Live',
+                      style: TextStyle(color: p.gain, fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ],
               ),
@@ -130,7 +141,12 @@ class _SignalsScreenState extends State<SignalsScreen> {
               Wrap(
                 spacing: 8,
                 children: [
-                  for (final (type, label) in const [(null, 'All'), (SignalType.buy, 'Buy'), (SignalType.hold, 'Hold'), (SignalType.sell, 'Sell')])
+                  for (final (type, label) in const [
+                    (null, 'All'),
+                    (SignalType.buy, 'Buy'),
+                    (SignalType.hold, 'Hold'),
+                    (SignalType.sell, 'Sell'),
+                  ])
                     ChoiceChip(
                       label: Text(label, style: TextStyle(color: _filter == type ? p.inkForeground : p.foreground)),
                       selected: _filter == type,
@@ -140,7 +156,8 @@ class _SignalsScreenState extends State<SignalsScreen> {
               ),
               const SizedBox(height: 8),
               if (_error != null) ErrorNote(_error, onRetry: _load),
-              if (_signals == null && _error == null) const Padding(padding: EdgeInsets.only(top: 16), child: SkeletonList(count: 6, height: 56)),
+              if (_signals == null && _error == null)
+                const Padding(padding: EdgeInsets.only(top: 16), child: SkeletonList(count: 6, height: 56)),
               if (_signals != null && visible.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 32),

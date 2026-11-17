@@ -115,6 +115,27 @@ def register_cli(app: Flask, container) -> None:
         container.uow.commit()
         click.echo(f"{user.email} is {'no longer' if revoke else 'now'} an admin.")
 
+    @app.cli.command("fetch-logos")
+    @click.option("--refresh", is_flag=True, help="Look up every Yahoo stock again, not only those without a website.")
+    def fetch_logos(refresh: bool):
+        """Store each Yahoo stock's company website, which gives its logo."""
+        query = Ticker.query.filter(Ticker.kind == "stock", Ticker.data_source == "yahoo", Ticker.active.is_(True))
+        if not refresh:
+            query = query.filter(Ticker.website.is_(None))
+        tickers = query.all()
+        click.echo(f"Looking up {len(tickers)} companies…")
+        found = 0
+        for start in range(0, len(tickers), 40):
+            batch = tickers[start : start + 40]
+            data = container.market_data.fundamentals_many(batch)
+            for ticker in batch:
+                website = (data.get(ticker.symbol) or {}).get("website")
+                if website:
+                    ticker.website = website[:200]
+                    found += 1
+            db.session.commit()
+        click.echo(f"Stored {found} websites; {len(tickers) - found} have none on Yahoo.")
+
     @app.cli.command("adviser-worker")
     def adviser_worker():
         """Run the Adviser monitoring loop in the foreground."""

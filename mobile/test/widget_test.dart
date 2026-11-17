@@ -112,6 +112,9 @@ class FakeApi extends ApiClient {
   Future<List<SelectorRun>> selectorRuns(String token) async => const [];
 
   @override
+  Future<List<OptimizerRun>> optimizerRuns(String token, {String? symbol}) async => const [];
+
+  @override
   Future<List<AdviserSession>> sessions(String token) async => const [];
 
   @override
@@ -193,7 +196,7 @@ void main() {
     expect(find.textContaining('Ada'), findsOneWidget);
     expect(find.text('LATEST SIGNALS'), findsOneWidget);
     expect(find.text('S&P 500'), findsWidgets);
-    for (final label in ['Home', 'Markets', 'Strategy', 'Signals', 'Profile']) {
+    for (final label in ['Home', 'Markets', 'Strategy', 'Profile']) {
       expect(find.text(label), findsWidgets);
     }
   });
@@ -209,6 +212,32 @@ void main() {
     }
     expect(find.text('CONFIGURE'), findsOneWidget);
     expect(find.text('Rank & select'), findsOneWidget);
+  });
+
+  testWidgets('Strategy shows the three steps, and the first step opens its page', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({'algizer_onboarding_seen': true, 'algizer_token': 'jwt'});
+    await _boot(tester);
+    expect(find.text('Signals'), findsNothing);
+
+    await tester.tap(find.text('Strategy'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Pick your stocks'), findsOneWidget);
+    expect(find.text('Tune the signal'), findsOneWidget);
+    expect(find.text('Go live'), findsOneWidget);
+    expect(find.text('0 of 3 done'), findsOneWidget);
+    expect(find.text('YOUR GUIDE'), findsOneWidget);
+
+    await tester.tap(find.text('Rank an exchange'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('STEP 1 OF 3 · SELECTOR'), findsOneWidget);
+    expect(find.text('CONFIGURE'), findsOneWidget);
   });
 
   group('helpers', () {

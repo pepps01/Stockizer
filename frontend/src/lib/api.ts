@@ -29,8 +29,7 @@ import type {
   TickerInfo,
   User,
   UserActionRecord,
-  UserActionType,
-} from "./types";
+  UserActionType, AdminAccessEntry } from "./types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -54,6 +53,8 @@ export class ApiClient {
       ...rest,
       headers: {
         "Content-Type": "application/json",
+        // Lets the server log sign-ins by platform (with the IP it sees).
+        "X-Client-Platform": "web",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
@@ -186,6 +187,8 @@ export class ApiClient {
       `/api/admin/users?q=${encodeURIComponent(q)}&page=${page}&page_size=25`,
       { token },
     );
+  adminUserAccess = (token: string, id: string) =>
+    this.request<{ access: AdminAccessEntry[] }>(`/api/admin/users/${id}/access`, { token });
   adminUpdateUser = (token: string, id: string, changes: Partial<Record<"is_admin" | "is_active" | "is_verified", boolean>>) =>
     this.patch<{ user: User }>(`/api/admin/users/${id}`, changes, token);
   adminSessions = (token: string, status: string) =>

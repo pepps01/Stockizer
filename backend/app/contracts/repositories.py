@@ -75,6 +75,13 @@ class IUserRepository(ABC):
     @abstractmethod
     def update(self, user_id: str, **fields): ...
 
+    @abstractmethod
+    def add_access(self, user_id: str, *, event: str, ip: str | None, platform: str, user_agent: str | None, keep: int) -> None:
+        """Logs a sign-up, sign-in or resume and trims the user's log to the newest `keep` entries."""
+
+    @abstractmethod
+    def recent_access(self, user_id: str, limit: int = 20) -> list: ...
+
 
 class ISelectorRunRepository(ABC):
     @abstractmethod

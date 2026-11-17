@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum ShellTab { home, markets, strategy, signals, profile }
+enum ShellTab { home, markets, strategy, profile }
 
 enum StrategyStage { selector, optimizer, adviser }
 

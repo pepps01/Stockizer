@@ -16,6 +16,10 @@ class Config:
     # ?token= (browsers can't set upgrade headers) and decodes it itself.
     JWT_TOKEN_LOCATION = ["headers"]
 
+    # Proxies in front of the API (load balancer, nginx). With N > 0 the client
+    # IP is read from the last N X-Forwarded-For entries; 0 trusts no header.
+    TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
+
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL", "mysql+pymysql://algizer:algizer@127.0.0.1:3316/algizer?charset=utf8mb4"
     )

@@ -18,6 +18,11 @@ class ApplicationFactory:
     def create(self) -> Flask:
         app = Flask(__name__)
         app.config.from_object(config_by_name[self._config_name])
+        hops = app.config.get("TRUSTED_PROXY_HOPS", 0)
+        if hops:
+            from werkzeug.middleware.proxy_fix import ProxyFix
+
+            app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
         self._configure_logging()
 
         for extension in (db, jwt, limiter, sock):

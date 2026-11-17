@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/exchange_tickers_screen.dart';
 import 'screens/markets_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/signals_screen.dart';
 import 'screens/ticker_detail_screen.dart';
 import 'state/shell_controller.dart';
 
@@ -28,6 +29,9 @@ void openStrategy(BuildContext context, StrategyIntent intent) {
   Navigator.of(context).popUntil((route) => route.isFirst);
   shell.openStrategy(intent);
 }
+
+/// Every signal the Adviser has sent, as a page over the current tab.
+Future<void> openSignals(BuildContext context) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SignalsScreen()));
 
 void openTab(BuildContext context, ShellTab tab) {
   final shell = context.read<ShellController>();

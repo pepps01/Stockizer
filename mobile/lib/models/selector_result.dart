@@ -9,6 +9,7 @@ class TickerBrief {
   final String exchange;
   final String currency;
   final String dataSource;
+  final String? logoUrl;
 
   const TickerBrief({
     required this.symbol,
@@ -17,6 +18,7 @@ class TickerBrief {
     required this.exchange,
     required this.currency,
     required this.dataSource,
+    this.logoUrl,
   });
 
   factory TickerBrief.fromJson(Json json) => TickerBrief(
@@ -26,6 +28,7 @@ class TickerBrief {
         exchange: json['exchange'] as String? ?? '',
         currency: json['currency'] as String? ?? '',
         dataSource: json['data_source'] as String? ?? 'yahoo',
+        logoUrl: json['logo_url'] as String?,
       );
 }
 

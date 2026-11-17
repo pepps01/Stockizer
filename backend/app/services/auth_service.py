@@ -1,15 +1,23 @@
+from datetime import timedelta
+
 from flask_jwt_extended import create_access_token
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.contracts.repositories import ICatalogRepository, IUnitOfWork, IUserRepository
 from app.contracts.services import IAuthService, IEmailService
+from app.domain.client import ClientInfo
 from app.domain.errors import AuthenticationError, ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.models.base import utcnow
 from app.models.user import ALERT_CHANNELS, RISK_PROFILES
 
 
 class AuthService(IAuthService):
     MIN_PASSWORD_LENGTH = 8
+    # Access log: entries kept per user, and how often a saved-session launch
+    # from the same IP is logged again.
+    ACCESS_KEEP = 50
+    RESUME_EVERY = timedelta(hours=6)
 
     def __init__(
         self,
@@ -30,7 +38,7 @@ class AuthService(IAuthService):
         self._salt = salt
         self._max_age_seconds = max_age_seconds
 
-    def register(self, *, first_name: str, last_name: str, email: str, password: str) -> dict:
+    def register(self, *, first_name: str, last_name: str, email: str, password: str, client: ClientInfo | None = None) -> dict:
         missing = [n for n, v in (("first_name", first_name), ("last_name", last_name), ("email", email), ("password", password)) if not v]
         if missing:
             raise ValidationError(f"Missing required field(s): {', '.join(missing)}")
@@ -42,6 +50,8 @@ class AuthService(IAuthService):
             raise ConflictError("An account with this email already exists")
 
         user = self._users.create(first_name=first_name, last_name=last_name, email=email, password_hash=generate_password_hash(password))
+        self._uow.flush()
+        self._record(user, "register", client)
         self._uow.commit()
         self._email.send_verification_email(to=user.email, first_name=user.first_name, token=self._serializer.dumps(user.email, salt=self._salt))
         return user.to_dict()
@@ -60,7 +70,7 @@ class AuthService(IAuthService):
         self._uow.commit()
         return user.to_dict()
 
-    def login(self, *, email: str, password: str) -> dict:
+    def login(self, *, email: str, password: str, client: ClientInfo | None = None) -> dict:
         if not email or not password:
             raise ValidationError("Email and password are required")
         user = self._users.get_by_email(email)
@@ -70,13 +80,36 @@ class AuthService(IAuthService):
             raise ForbiddenError("This account has been disabled. Contact support.")
         if not user.is_verified:
             raise ForbiddenError("Please verify your email before logging in")
+        self._record(user, "login", client)
+        self._uow.commit()
         return {"access_token": create_access_token(identity=user.id), "user": user.to_dict()}
 
-    def get_profile(self, user_id: str) -> dict:
+    def get_profile(self, user_id: str, client: ClientInfo | None = None) -> dict:
         user = self._users.get_by_id(user_id)
         if user is None:
             raise NotFoundError("User not found")
+        if client is not None:
+            now = utcnow()
+            moved = client.ip != user.last_ip
+            stale = user.last_seen_at is None or now - user.last_seen_at >= self.RESUME_EVERY
+            if moved or stale:
+                self._record(user, "resume", client)
+            else:
+                user.last_seen_at = now
+            self._uow.commit()
         return user.to_dict()
+
+    def _record(self, user, event: str, client: ClientInfo | None) -> None:
+        """Remembers where the account was used from: IP, platform and browser or app."""
+        if client is None:
+            return
+        user.last_ip = client.ip
+        user.last_seen_at = utcnow()
+        if event == "register":
+            user.signup_ip = client.ip
+        self._users.add_access(
+            user.id, event=event, ip=client.ip, platform=client.platform, user_agent=client.user_agent, keep=self.ACCESS_KEEP
+        )
 
     def update_profile(self, user_id: str, data: dict) -> dict:
         fields = {name: str(data[name]).strip()[:80] for name in ("first_name", "last_name") if data.get(name)}

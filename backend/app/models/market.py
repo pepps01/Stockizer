@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from app.extensions import db
 from app.models.base import new_uuid, num, utcnow
 
@@ -70,8 +72,16 @@ class Ticker(db.Model):
     # Catalog position: headline indices and largest companies first.
     display_order = db.Column(db.Integer, nullable=False, default=0)
     active = db.Column(db.Boolean, nullable=False, default=True)
+    # Company website (from Yahoo's profile), used to show the company's logo.
+    website = db.Column(db.String(200))
 
     exchange = db.relationship("Exchange", lazy="joined")
+
+    @property
+    def logo_url(self) -> str | None:
+        """The company's site icon at 128 px, or None when no website is known."""
+        domain = logo_domain(self.website)
+        return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else None
 
     def to_dict(self) -> dict:
         exchange = self.exchange
@@ -88,7 +98,17 @@ class Ticker(db.Model):
             "exchange_name": exchange.name if exchange else None,
             "country": exchange.country.name if exchange and exchange.country else None,
             "country_code": exchange.country_code if exchange else None,
+            "logo_url": self.logo_url,
         }
+
+
+def logo_domain(website: str | None) -> str | None:
+    """'https://www.apple.com/uk/' -> 'apple.com'."""
+    if not website:
+        return None
+    host = urlsplit(website if "//" in website else f"//{website}").hostname or ""
+    host = host.lower().removeprefix("www.")
+    return host or None
 
 
 class MarketData(db.Model):

@@ -10,6 +10,7 @@ import 'exchange_status_badge.dart';
 import 'flag.dart';
 import 'live_quotes.dart';
 import 'motion.dart';
+import 'ticker_logo.dart';
 
 const _tabular = [FontFeature.tabularFigures()];
 
@@ -93,7 +94,10 @@ class MarketRowTile extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (showCountry) ...[Flag(code: info.countryCode, size: 30), const SizedBox(width: 10)],
+                if (showCountry || info.logoUrl != null) ...[
+                  TickerLogo(symbol: info.displaySymbol, logoUrl: info.logoUrl, countryCode: info.countryCode, size: 34),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(child: TickerIdentity(info: info)),
                 const SizedBox(width: 8),
                 if (view == MarketView.overview)
@@ -233,7 +237,9 @@ class IndexCard extends StatelessWidget {
         width: 156,
         margin: const EdgeInsets.only(right: 16),
         padding: const EdgeInsets.only(right: 16),
-        decoration: BoxDecoration(border: Border(right: BorderSide(color: p.border))),
+        decoration: BoxDecoration(
+          border: Border(right: BorderSide(color: p.border)),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -345,7 +351,7 @@ class _MoverTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            Flag(code: row.info.countryCode, size: 30),
+            TickerLogo(symbol: row.info.displaySymbol, logoUrl: row.info.logoUrl, countryCode: row.info.countryCode, size: 34),
             const SizedBox(width: 10),
             Expanded(child: TickerIdentity(info: row.info)),
             Column(
@@ -386,52 +392,54 @@ class ExchangeTile extends StatelessWidget {
     final p = context.palette;
     final e = exchange;
     return InkWell(
-        onTap: () => openExchange(context, e.code),
-        child: Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.border))),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flag(code: e.countryCode, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(e.code, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        const SizedBox(width: 8),
-                        SourceBadge(source: e.dataSource),
-                      ],
-                    ),
-                    Text(
-                      e.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13, color: p.mutedForeground),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        MarketStatus(open: e.isOpen),
-                        Text(
-                          '${e.opensAt}–${e.closesAt} local · ${e.stockCount ?? 0} stocks',
-                          style: TextStyle(fontSize: 12, color: p.mutedForeground),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: p.mutedForeground),
-            ],
-          ),
+      onTap: () => openExchange(context, e.code),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: p.border)),
         ),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flag(code: e.countryCode, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(e.code, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 8),
+                      SourceBadge(source: e.dataSource),
+                    ],
+                  ),
+                  Text(
+                    e.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: p.mutedForeground),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      MarketStatus(open: e.isOpen),
+                      Text(
+                        '${e.opensAt}–${e.closesAt} local · ${e.stockCount ?? 0} stocks',
+                        style: TextStyle(fontSize: 12, color: p.mutedForeground),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: p.mutedForeground),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -9,7 +9,7 @@ import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/badges.dart';
 import '../widgets/common.dart';
-import '../widgets/flag.dart';
+import '../widgets/ticker_logo.dart';
 
 /// Symbol search across every exchange. In [pickMode] it pops with the chosen
 /// [TickerInfo] instead of opening the symbol page.
@@ -19,9 +19,9 @@ class SearchScreen extends StatefulWidget {
   final bool pickMode;
   final String? title;
 
-  static Future<TickerInfo?> pick(BuildContext context, {String title = 'Choose a ticker'}) => Navigator.of(context).push<TickerInfo>(
-        MaterialPageRoute(fullscreenDialog: true, builder: (_) => SearchScreen(pickMode: true, title: title)),
-      );
+  static Future<TickerInfo?> pick(BuildContext context, {String title = 'Choose a ticker'}) =>
+      Navigator.of(context)
+          .push<TickerInfo>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => SearchScreen(pickMode: true, title: title)));
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -72,7 +72,10 @@ class _SearchScreenState extends State<SearchScreen> {
               autofocus: true,
               textInputAction: TextInputAction.search,
               onChanged: _onChanged,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Company, symbol or index — e.g. Dangote, SHOP, 005930'),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Company, symbol or index — e.g. Dangote, SHOP, 005930',
+              ),
             ),
           ),
         ),
@@ -96,12 +99,16 @@ class _SearchScreenState extends State<SearchScreen> {
                   itemBuilder: (context, i) {
                     final t = results[i];
                     return ListTile(
-                      leading: Flag(code: t.countryCode, size: 36),
+                      leading: TickerLogo(symbol: t.displaySymbol, logoUrl: t.logoUrl, countryCode: t.countryCode, size: 36),
                       title: Row(
                         children: [
                           Text(t.displaySymbol, style: const TextStyle(fontWeight: FontWeight.w700)),
                           const SizedBox(width: 8),
-                          if (t.isIndex) Text('INDEX', style: TextStyle(fontSize: 10, color: p.brand, fontWeight: FontWeight.w700)),
+                          if (t.isIndex)
+                            Text(
+                              'INDEX',
+                              style: TextStyle(fontSize: 10, color: p.brand, fontWeight: FontWeight.w700),
+                            ),
                           const SizedBox(width: 6),
                           SourceBadge(source: t.dataSource),
                         ],

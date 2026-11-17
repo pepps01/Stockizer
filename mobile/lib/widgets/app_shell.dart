@@ -9,7 +9,6 @@ import '../navigation.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/markets_screen.dart';
 import '../screens/profile_screen.dart';
-import '../screens/signals_screen.dart';
 import '../screens/strategy_screen.dart';
 import '../services/realtime_client.dart';
 import '../state/push_registrar.dart';
@@ -19,7 +18,8 @@ import '../theme.dart';
 import 'badges.dart';
 import 'motion.dart';
 
-/// Signed-in shell: Home · Markets · Strategy · Signals · Profile, with the
+/// Signed-in shell: Home · Markets · Strategy · Profile (signals open from
+/// Home and Strategy), with the
 /// floating pill navigation from the Quiet Ledger design. Also surfaces
 /// Adviser signals pushed over the socket as banners (the web SignalToaster).
 class AppShell extends StatefulWidget {
@@ -36,13 +36,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   StreamSubscription<void>? _openedSub;
   AppLifecycleState _lifecycle = AppLifecycleState.resumed;
 
-  static const _screens = [DashboardScreen(), MarketsScreen(), StrategyScreen(), SignalsScreen(), ProfileScreen()];
+  static const _screens = [DashboardScreen(), MarketsScreen(), StrategyScreen(), ProfileScreen()];
 
   static const _tabs = [
     (Icons.home_outlined, Icons.home_rounded, 'Home'),
     (Icons.public_outlined, Icons.public, 'Markets'),
     (Icons.tune_outlined, Icons.tune, 'Strategy'),
-    (Icons.show_chart_outlined, Icons.show_chart, 'Signals'),
     (Icons.person_outline, Icons.person, 'Profile'),
   ];
 
@@ -53,7 +52,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _realtime.listenForSignals();
     _signalSub = _realtime.signals.listen(_announce);
     _openedSub = _push.push.opened.listen((_) {
-      if (mounted) openTab(context, ShellTab.signals);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      openSignals(context);
     });
   }
 
@@ -114,7 +115,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               ),
             ],
           ),
-          action: SnackBarAction(label: 'View', textColor: p.brandSoft, onPressed: () => openTab(context, ShellTab.signals)),
+          action: SnackBarAction(label: 'View', textColor: p.brandSoft, onPressed: () => openSignals(context)),
         ),
       );
   }

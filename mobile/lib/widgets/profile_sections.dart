@@ -12,9 +12,9 @@ import '../state/ticker_marks.dart';
 import '../theme.dart';
 import 'badges.dart';
 import 'common.dart';
-import 'flag.dart';
 import 'live_quotes.dart';
 import 'ticker_menu.dart';
+import 'ticker_logo.dart';
 
 /// Investor profile: buy / hold / sell calls assumed from Financials or a
 /// symbol page, with the price then → now and the move since (web: AssumedPositions).
@@ -84,6 +84,7 @@ class _AssumedPositionsSectionState extends State<AssumedPositionsSection> {
                     for (final a in rows)
                       _Line(
                         countryCode: a.info.countryCode,
+                        logoUrl: a.info.logoUrl,
                         symbol: a.symbol,
                         displaySymbol: a.info.displaySymbol,
                         name: a.info.name,
@@ -102,6 +103,7 @@ class _AssumedPositionsSectionState extends State<AssumedPositionsSection> {
                           displaySymbol: a.info.displaySymbol,
                           name: a.info.name,
                           quote: a.quote,
+                          logoUrl: a.info.logoUrl,
                           marks: _marks,
                         ),
                       ),
@@ -169,6 +171,7 @@ class _WatchlistSectionState extends State<WatchlistSection> {
                       for (final row in settings.sortWatchlist(rows, live).take(8))
                         _Line(
                           countryCode: row.info.countryCode,
+                          logoUrl: row.info.logoUrl,
                           symbol: row.symbol,
                           displaySymbol: row.info.displaySymbol,
                           name: row.info.name,
@@ -205,6 +208,7 @@ class _WatchlistSectionState extends State<WatchlistSection> {
 class _Line extends StatelessWidget {
   const _Line({
     required this.countryCode,
+    required this.logoUrl,
     required this.symbol,
     required this.displaySymbol,
     required this.name,
@@ -213,6 +217,7 @@ class _Line extends StatelessWidget {
   });
 
   final String countryCode;
+  final String? logoUrl;
   final String symbol;
   final String displaySymbol;
   final String name;
@@ -234,7 +239,7 @@ class _Line extends StatelessWidget {
               onTap: () => openSymbol(context, symbol),
               child: Row(
                 children: [
-                  Flag(code: countryCode, size: 22),
+                  TickerLogo(symbol: displaySymbol, logoUrl: logoUrl, countryCode: countryCode, size: 30),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(

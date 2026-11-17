@@ -28,9 +28,9 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium">Email</span>
+        <span className="mb-1.5 block text-sm font-bold">Email</span>
         <input
           type="email"
           required
@@ -40,7 +40,7 @@ export function LoginForm() {
         />
       </label>
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium">Password</span>
+        <span className="mb-1.5 block text-sm font-bold">Password</span>
         <input
           type="password"
           required
@@ -55,14 +55,14 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-lg bg-brand py-2.5 text-sm font-medium text-brand-foreground hover:opacity-90 disabled:opacity-50"
+        className="btn-primary w-full"
       >
         {submitting ? "Logging in…" : "Log in"}
       </button>
 
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-brand hover:underline">
+        <Link href="/register" className="font-bold text-foreground underline underline-offset-4">
           Sign up
         </Link>
       </p>

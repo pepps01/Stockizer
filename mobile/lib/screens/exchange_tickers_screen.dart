@@ -67,7 +67,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
                 .where((r) => q.isEmpty || '${r.info.displaySymbol} ${r.info.name} ${r.info.sector ?? ''}'.toLowerCase().contains(q))
                 .toList();
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
               children: [
                 _ExchangeHeader(exchange: listing.exchange),
                 if (isSimulated(listing.exchange.dataSource)) ...[

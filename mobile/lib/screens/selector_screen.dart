@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../widgets/badges.dart';
 import '../widgets/common.dart';
 import '../widgets/exchange_picker.dart';
+import '../widgets/motion.dart';
 import 'strategy_screen.dart';
 
 const _tabular = [FontFeature.tabularFigures()];
@@ -33,6 +34,7 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
   late String? _exchange = context.read<AuthProvider>().user?.defaultExchange;
   DateTime? _start;
   DateTime? _end;
+  String _stockType = 'equity';
   String _metric = 'sharpe';
   int _topN = 10;
   SelectorRun? _run;
@@ -68,8 +70,10 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
         periodEnd: _end == null ? options.defaultEnd : isoDate(_end!),
         metric: _metric,
         topN: _topN,
+        stockType: _stockType,
       );
       if (!mounted) return;
+      Haptics.alert();
       setState(() {
         _run = run;
         _history = _api.selectorRuns(_token);
@@ -91,12 +95,7 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
   }
 
   Future<void> _pickDate({required bool start, required DateTime current}) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: current,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
+    final picked = await showDatePicker(context: context, initialDate: current, firstDate: DateTime(2000), lastDate: DateTime.now());
     if (picked != null) setState(() => start ? _start = picked : _end = picked);
   }
 
@@ -104,9 +103,11 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
   Widget build(BuildContext context) {
     super.build(context);
     return RefreshIndicator(
-      onRefresh: () async => setState(() => _history = _api.selectorRuns(_token)),
+      onRefresh: () async => setState(() {
+        _history = _api.selectorRuns(_token);
+      }),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         children: [
           Text(
             'Rank an exchange’s stocks by a performance criterion over a historical period, keep the top N, and save them to a ticker file for the Optimizer.',
@@ -129,7 +130,10 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             selected: r.id == _run?.id,
-                            title: Text('${r.exchange} · ${r.metric} · top ${r.topN}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                            title: Text(
+                              '${r.exchange} · ${r.stockType} · ${r.metric} · top ${r.topN}',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
                             subtitle: Text('${r.periodStart} → ${r.periodEnd} · ${formatDateTime(r.createdAt)}'),
                             trailing: const Icon(Icons.chevron_right),
                             onTap: () => _openRun(r.id),
@@ -149,17 +153,43 @@ class _SelectorScreenState extends State<SelectorScreen> with AutomaticKeepAlive
     final metrics = options.metrics.isEmpty ? const [SelectorMetric('sharpe', 'Sharpe ratio')] : options.metrics;
     final metric = metrics.any((m) => m.value == _metric) ? _metric : metrics.first.value;
     return SectionCard(
-      title: '1 · Configure',
+      title: 'Configure',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          LabeledField(label: 'Stock exchange', child: ExchangePickerField(value: _exchange, onChanged: (code) => setState(() => _exchange = code))),
+          if (options.stockTypes.isNotEmpty) ...[
+            LabeledField(
+              label: 'Stock type',
+              child: StockTypePicker(options: options.stockTypes, value: _stockType, onChanged: (v) => setState(() => _stockType = v)),
+            ),
+            const SizedBox(height: 14),
+          ],
+          LabeledField(
+            label: 'Stock exchange',
+            child: ExchangePickerField(value: _exchange, onChanged: (code) => setState(() => _exchange = code)),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: LabeledField(label: 'From', child: DateButton(date: start, onTap: () => _pickDate(start: true, current: start)))),
+              Expanded(
+                child: LabeledField(
+                  label: 'From',
+                  child: DateButton(
+                    date: start,
+                    onTap: () => _pickDate(start: true, current: start),
+                  ),
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: LabeledField(label: 'To', child: DateButton(date: end, onTap: () => _pickDate(start: false, current: end)))),
+              Expanded(
+                child: LabeledField(
+                  label: 'To',
+                  child: DateButton(
+                    date: end,
+                    onTap: () => _pickDate(start: false, current: end),
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -202,13 +232,17 @@ class _Results extends StatelessWidget {
     final p = context.palette;
     final results = run.results ?? const <SelectorResult>[];
     return SectionCard(
-      title: '2 · Top ${results.length} of ${run.universeSize} on ${run.exchangeName}',
+      title: 'Top ${results.length} of ${run.universeSize}${run.stockType == 'equity' ? '' : ' ${run.stockType}'} · ${run.exchangeName}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < results.length; i++) ...[
             if (i > 0) const Divider(),
-            _ResultTile(result: results[i]),
+            FadeSlideIn(
+              key: ValueKey('${run.id}-$i'),
+              delay: FadeSlideIn.stagger(i, stepMs: 60),
+              child: _ResultTile(result: results[i]),
+            ),
           ],
           const SizedBox(height: 10),
           Text(
@@ -217,10 +251,9 @@ class _Results extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: p.mutedForeground),
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
+          FilledButton(
             onPressed: () => openStrategy(context, StrategyIntent.optimizer(selectorRunId: run.id)),
-            icon: const Icon(Icons.tune, size: 18),
-            label: const Text('Send to Optimizer →'),
+            child: const Text('Send to Optimizer →'),
           ),
         ],
       ),
@@ -238,12 +271,15 @@ class _ResultTile extends StatelessWidget {
     final p = context.palette;
     final r = result;
     Widget metric(String label, String value, [Color? color]) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(fontSize: 10.5, color: p.mutedForeground)),
-            Text(value, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: color, fontFeatures: _tabular)),
-          ],
-        );
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 10.5, color: p.mutedForeground)),
+        Text(
+          value,
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: color, fontFeatures: _tabular),
+        ),
+      ],
+    );
     return InkWell(
       onTap: () => openSymbol(context, r.ticker.symbol),
       child: Padding(
@@ -252,10 +288,12 @@ class _ResultTile extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: p.brandSoft,
-                  child: Text('${r.rank}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p.brand)),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    r.rank.toString().padLeft(2, '0'),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w300, color: p.mutedForeground, fontFeatures: _tabular),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -267,16 +305,28 @@ class _ResultTile extends StatelessWidget {
                           Text(r.ticker.displaySymbol, style: const TextStyle(fontWeight: FontWeight.w700)),
                           const SizedBox(width: 6),
                           SourceBadge(source: r.ticker.dataSource),
+                          if (r.style != null) ...[
+                            const SizedBox(width: 8),
+                            Text(r.style!.toUpperCase(), style: labelCaps(p).copyWith(fontSize: 10)),
+                          ],
                         ],
                       ),
-                      Text(r.ticker.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: p.mutedForeground)),
+                      Text(
+                        r.ticker.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12.5, color: p.mutedForeground),
+                      ),
                     ],
                   ),
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(formatNumber(r.score, 3), style: const TextStyle(fontWeight: FontWeight.w700, fontFeatures: _tabular)),
+                    Text(
+                      formatNumber(r.score, 3),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontFeatures: _tabular),
+                    ),
                     Text('score', style: TextStyle(fontSize: 10.5, color: p.mutedForeground)),
                   ],
                 ),
@@ -313,7 +363,10 @@ class DateButton extends StatelessWidget {
       style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14)),
       onPressed: onTap,
       icon: const Icon(Icons.calendar_today_outlined, size: 16),
-      label: Text(isoDate(date), style: const TextStyle(fontWeight: FontWeight.w500, fontFeatures: _tabular)),
+      label: Text(
+        isoDate(date),
+        style: const TextStyle(fontWeight: FontWeight.w500, fontFeatures: _tabular),
+      ),
     );
   }
 }
@@ -331,14 +384,98 @@ class Stepper1D extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Container(
-      decoration: BoxDecoration(border: Border.all(color: p.border), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        border: Border.all(color: p.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Row(
         children: [
           IconButton(onPressed: value > min ? () => onChanged(value - 1) : null, icon: const Icon(Icons.remove)),
           Expanded(
-            child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, fontFeatures: _tabular)),
+            child: Text(
+              '$value',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, fontFeatures: _tabular),
+            ),
           ),
           IconButton(onPressed: value < max ? () => onChanged(value + 1) : null, icon: const Icon(Icons.add)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Selector's starting parameter: equity (all), growth or value stocks.
+/// A quiet radio list, one hairline row per type with its definition.
+class StockTypePicker extends StatelessWidget {
+  const StockTypePicker({super.key, required this.options, required this.value, required this.onChanged});
+
+  final List<StockTypeOption> options;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: p.border)),
+      ),
+      child: Column(
+        children: [
+          for (final o in options)
+            Semantics(
+              inMutuallyExclusiveGroup: true,
+              checked: o.value == value,
+              button: true,
+              child: InkWell(
+                onTap: () {
+                  if (o.value != value) Haptics.tick();
+                  onChanged(o.value);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: p.border)),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        margin: const EdgeInsets.only(top: 1),
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: o.value == value ? p.foreground : p.border, width: 2),
+                        ),
+                        child: o.value == value
+                            ? Center(
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(color: p.foreground, shape: BoxShape.circle),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(o.label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 2),
+                            Text(o.description, style: TextStyle(fontSize: 12.5, height: 1.4, color: p.mutedForeground)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -5,6 +5,8 @@ from app.models.base import iso, new_uuid, num, utcnow
 
 SELECTOR_METRICS = ("total_return", "sharpe", "sortino", "momentum", "low_volatility", "max_drawdown", "calmar")
 OPTIMIZER_OBJECTIVES = ("sharpe", "total_return", "sortino", "calmar")
+STOCK_TYPES = ("equity", "growth", "value")
+DEFAULT_STRATEGY = "algebraic"
 RUN_STATUSES = ("completed", "failed")
 SESSION_STATUSES = ("active", "paused", "stopped")
 SIGNAL_TYPES = ("BUY", "SELL", "HOLD")
@@ -21,6 +23,8 @@ class SelectorRun(db.Model):
     period_end = db.Column(db.Date, nullable=False)
     metric = db.Column(db.Enum(*SELECTOR_METRICS, name="selector_metric"), nullable=False)
     top_n = db.Column(db.Integer, nullable=False)
+    # equity = every stock; growth / value = that style, judged against the exchange's other stocks.
+    stock_type = db.Column(db.String(16), nullable=False, default="equity", server_default="equity")
     universe_size = db.Column(db.Integer, nullable=False, default=0)
     artifact_id = db.Column(db.String(36), db.ForeignKey("artifacts.id"))
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
@@ -39,6 +43,7 @@ class SelectorRun(db.Model):
             "period_end": self.period_end.isoformat(),
             "metric": self.metric,
             "top_n": self.top_n,
+            "stock_type": self.stock_type,
             "universe_size": self.universe_size,
             "artifact_id": self.artifact_id,
             "created_at": iso(self.created_at),
@@ -75,6 +80,8 @@ class OptimizerRun(db.Model):
     training_end = db.Column(db.Date, nullable=False)
     bounds = db.Column(db.JSON, nullable=False)
     objective = db.Column(db.Enum(*OPTIMIZER_OBJECTIVES, name="optimizer_objective"), nullable=False)
+    # Which signal engine was tuned (see app/analytics/strategies.py).
+    strategy = db.Column(db.String(32), nullable=False, default=DEFAULT_STRATEGY, server_default=DEFAULT_STRATEGY)
     best_score = db.Column(db.Numeric(10, 6))
     metrics = db.Column(db.JSON)  # train / out-of-sample / buy-and-hold statistics + equity curves
     status = db.Column(db.Enum(*RUN_STATUSES, name="run_status"), nullable=False, default="completed")
@@ -100,6 +107,7 @@ class OptimizerRun(db.Model):
             "training_end": self.training_end.isoformat(),
             "bounds": self.bounds,
             "objective": self.objective,
+            "strategy": self.strategy,
             "best_score": num(self.best_score),
             "parameters": self.params_dict(),
             "metrics": metrics,
@@ -145,6 +153,7 @@ class AdviserSession(db.Model):
             **ticker_brief(self.ticker),
             "optimizer_run_id": self.optimizer_run_id,
             "parameters": self.optimizer_run.params_dict() if self.optimizer_run else None,
+            "strategy": self.optimizer_run.strategy if self.optimizer_run else DEFAULT_STRATEGY,
             "interval_sec": self.interval_sec,
             "status": self.status,
             "started_at": iso(self.started_at),

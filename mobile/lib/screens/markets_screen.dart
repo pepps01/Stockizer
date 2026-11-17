@@ -81,7 +81,7 @@ class _MarketsScreenState extends State<MarketsScreen> {
               await _indices.then<void>((_) {}, onError: (_) {});
             },
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
               children: [
                 Text(
                   'Major indices, the day’s movers and every covered exchange. Prices stream live; markets without a free feed are marked Simulated.',

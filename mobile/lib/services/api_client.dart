@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../models/market.dart';
+import '../models/financials.dart';
 import '../models/selector_result.dart';
 import '../models/strategy.dart';
 import '../models/user.dart';
@@ -21,7 +22,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Typed client for the Algizer REST API — the Dart twin of
+/// Typed client for the Stockiser REST API — the Dart twin of
 /// frontend/src/lib/api.ts. Every call returns parsed models.
 class ApiClient {
   ApiClient({String? baseUrl, http.Client? httpClient})
@@ -70,7 +71,7 @@ class ApiClient {
     } on TimeoutException {
       throw ApiException('The server took too long to respond. Try again.', 0);
     } catch (_) {
-      throw ApiException('Can’t reach the Algizer server at $baseUrl.', 0);
+      throw ApiException('Can’t reach the Stockiser server at $baseUrl.', 0);
     }
 
     if (response.statusCode == 204 || response.body.isEmpty) {
@@ -170,6 +171,15 @@ class ApiClient {
     return (AdviserSignal.fromJson(json['signal'] as Json), json['optimizer_run_id']?.toString());
   }
 
+  /// The stocks Stockiser covers in an index's market.
+  /// Can be slow on a cold server (ratings for every stock), so it gets the long timeout.
+  Future<IndexMembers> indexMembers(String symbol) async =>
+      IndexMembers.fromJson(await _request('GET', '/api/symbols/${_seg(symbol)}/members', timeout: _pipelineTimeout));
+
+  /// Those stocks split into growth, value and equity segments.
+  Future<IndexFinancials> indexFinancials(String symbol) async =>
+      IndexFinancials.fromJson(await _request('GET', '/api/symbols/${_seg(symbol)}/financials', timeout: _pipelineTimeout));
+
   // ---- selector ----
 
   Future<SelectorOptions> selectorOptions() async => SelectorOptions.fromJson(await _get('/api/selector/options'));
@@ -181,10 +191,11 @@ class ApiClient {
     required String periodEnd,
     required String metric,
     required int topN,
+    String stockType = 'equity',
   }) async {
     final json = await _post(
       '/api/selector/runs',
-      {'exchange': exchange, 'period_start': periodStart, 'period_end': periodEnd, 'metric': metric, 'top_n': topN},
+      {'exchange': exchange, 'period_start': periodStart, 'period_end': periodEnd, 'metric': metric, 'top_n': topN, 'stock_type': stockType},
       token: token,
       timeout: _pipelineTimeout,
     );
@@ -210,6 +221,7 @@ class ApiClient {
     required String trainingStart,
     required String trainingEnd,
     required String objective,
+    String strategy = 'algebraic',
     Map<String, (double, double)> bounds = const {},
   }) async {
     final json = await _post(
@@ -221,6 +233,7 @@ class ApiClient {
         'training_start': trainingStart,
         'training_end': trainingEnd,
         'objective': objective,
+        'strategy': strategy,
         'bounds': {for (final e in bounds.entries) e.key: [e.value.$1, e.value.$2]},
       },
       token: token,
@@ -264,6 +277,22 @@ class ApiClient {
 
   // ---- account ----
 
+  /// The user's journal entries ("buy" / "hold" / "sell" / "view"), newest first.
+  /// The investor's assumed calls, one stance ("buy" | "hold" | "sell") per ticker.
+  Future<List<String>> journalActions(String token) async => [
+        for (final a in ((await _get('/api/assumptions', token: token))['assumptions'] as List? ?? const []))
+          (a as Map<String, dynamic>)['stance'] as String,
+      ];
+
+  Future<List<Assumption>> assumptions(String token) async =>
+      listOf((await _get('/api/assumptions', token: token))['assumptions'], Assumption.fromJson);
+
+  Future<void> clearAssumption(String token, String symbol) => _request('DELETE', '/api/assumptions/${_seg(symbol)}', token: token);
+
+  /// Assume a buy, hold or sell call on a ticker (tracked in the profile; never an order).
+  Future<void> setAssumption(String token, String symbol, String stance) =>
+      _request('PUT', '/api/assumptions/${_seg(symbol)}', body: {'stance': stance}, token: token);
+
   Future<List<MarketRow>> watchlist(String token) async => listOf((await _get('/api/watchlist', token: token))['items'], MarketRow.fromJson);
 
   Future<void> addToWatchlist(String token, String symbol) => _post('/api/watchlist', {'symbol': symbol}, token: token);
@@ -271,7 +300,14 @@ class ApiClient {
   Future<void> removeFromWatchlist(String token, String symbol) =>
       _request('DELETE', '/api/watchlist/${_seg(symbol)}', token: token);
 
-  /// Journal the user's own decision — Algizer never places orders.
+  /// Register this phone's FCM token so the Adviser can push signals to it.
+  Future<void> registerDevice(String token, String deviceToken, String platform) =>
+      _request('POST', '/api/devices', body: {'token': deviceToken, 'platform': platform}, token: token);
+
+  Future<void> unregisterDevice(String token, String deviceToken) =>
+      _request('DELETE', '/api/devices', body: {'token': deviceToken}, token: token);
+
+  /// Journal the user's own decision — Stockiser never places orders.
   Future<void> recordAction(String token, String symbol, String action) =>
       _post('/api/actions', {'symbol': symbol, 'action': action}, token: token);
 }

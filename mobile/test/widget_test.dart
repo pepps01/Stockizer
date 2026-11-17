@@ -10,6 +10,7 @@ import 'package:tickizer/models/strategy.dart';
 import 'package:tickizer/models/user.dart';
 import 'package:tickizer/screens/verify_email_screen.dart';
 import 'package:tickizer/services/api_client.dart';
+import 'package:tickizer/services/push_service.dart';
 import 'package:tickizer/services/realtime_client.dart';
 
 const _user = {
@@ -70,27 +71,28 @@ class FakeApi extends ApiClient {
   Future<List<MarketRow>> indices({String? country}) async => [_index];
 
   @override
-  Future<List<Country>> countries() async =>
-      [Country.fromJson({'code': 'NG', 'name': 'Nigeria', 'region': 'Africa', 'currency': 'NGN', 'exchange_count': 1})];
+  Future<List<Country>> countries() async => [
+    Country.fromJson({'code': 'NG', 'name': 'Nigeria', 'region': 'Africa', 'currency': 'NGN', 'exchange_count': 1}),
+  ];
 
   @override
   Future<List<Exchange>> exchanges({String? country}) async => [
-        Exchange.fromJson({
-          'id': 'e1',
-          'code': 'NGX',
-          'name': 'Nigerian Exchange',
-          'country_code': 'NG',
-          'country': 'Nigeria',
-          'opens_at': '10:00',
-          'closes_at': '14:30',
-          'trading_days': [0, 1, 2, 3, 4],
-          'currency': 'NGN',
-          'data_source': 'synthetic',
-          'is_open': true,
-          'local_time': '2026-09-30T11:00:00',
-          'stock_count': 12,
-        }),
-      ];
+    Exchange.fromJson({
+      'id': 'e1',
+      'code': 'NGX',
+      'name': 'Nigerian Exchange',
+      'country_code': 'NG',
+      'country': 'Nigeria',
+      'opens_at': '10:00',
+      'closes_at': '14:30',
+      'trading_days': [0, 1, 2, 3, 4],
+      'currency': 'NGN',
+      'data_source': 'synthetic',
+      'is_open': true,
+      'local_time': '2026-09-30T11:00:00',
+      'stock_count': 12,
+    }),
+  ];
 
   @override
   Future<Movers> movers({String? country, String? exchange, int? limit}) async =>
@@ -103,14 +105,20 @@ class FakeApi extends ApiClient {
   Future<List<MarketRow>> watchlist(String token) async => const [];
 
   @override
-  Future<SelectorOptions> selectorOptions() async => const SelectorOptions(
-        metrics: [SelectorMetric('sharpe', 'Sharpe ratio')],
-        defaultStart: '2025-09-30',
-        defaultEnd: '2026-09-30',
-      );
+  Future<SelectorOptions> selectorOptions() async =>
+      const SelectorOptions(metrics: [SelectorMetric('sharpe', 'Sharpe ratio')], defaultStart: '2025-09-30', defaultEnd: '2026-09-30');
 
   @override
   Future<List<SelectorRun>> selectorRuns(String token) async => const [];
+
+  @override
+  Future<List<AdviserSession>> sessions(String token) async => const [];
+
+  @override
+  Future<List<String>> journalActions(String token) async => const [];
+
+  @override
+  Future<List<Bar>> history(String symbol, String range) async => const [];
 }
 
 /// Never opens a socket.
@@ -127,7 +135,7 @@ class OfflineRealtime extends RealtimeClient {
   void setToken(String? token) {}
 }
 
-Widget _app() => AlgizerApp(api: FakeApi(), realtime: OfflineRealtime(), minSplash: Duration.zero);
+Widget _app() => StockiserApp(api: FakeApi(), realtime: OfflineRealtime(), push: const NoopPushService(), minSplash: Duration.zero);
 
 Future<void> _boot(WidgetTester tester) async {
   await tester.pumpWidget(_app());
@@ -183,23 +191,23 @@ void main() {
     }
 
     expect(find.textContaining('Ada'), findsOneWidget);
-    expect(find.text('Strategy pipeline'), findsOneWidget);
+    expect(find.text('LATEST SIGNALS'), findsOneWidget);
     expect(find.text('S&P 500'), findsWidgets);
-    for (final label in ['Home', 'Markets', 'Strategy', 'Profile']) {
+    for (final label in ['Home', 'Markets', 'Strategy', 'Signals', 'Profile']) {
       expect(find.text(label), findsWidgets);
     }
   });
 
-  testWidgets('A stored session skips straight to the dashboard and the Selector opens from it', (tester) async {
+  testWidgets('A stored session skips straight to the dashboard and the Selector opens from its strategy strip', (tester) async {
     SharedPreferences.setMockInitialValues({'algizer_onboarding_seen': true, 'algizer_token': 'jwt'});
     await _boot(tester);
-    expect(find.text('Strategy pipeline'), findsOneWidget);
+    expect(find.text('LATEST SIGNALS'), findsOneWidget);
 
-    await tester.tap(find.text('1 · Selector'));
+    await tester.tap(find.text('Start →'));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.text('1 · Configure'), findsOneWidget);
+    expect(find.text('CONFIGURE'), findsOneWidget);
     expect(find.text('Rank & select'), findsOneWidget);
   });
 
@@ -235,8 +243,20 @@ void main() {
         'parameters': {'fast': 12, 'slow': 48, 'window': 20, 'trend_weight': 0.6, 'threshold': 0.2},
         'metrics': {
           'min_trades_met': true,
-          'train': {'strategy': {'sharpe': 1.2}, 'buy_and_hold': {'sharpe': 0.8}, 'trades': 9, 'win_rate': 0.55, 'exposure': 0.6},
-          'test': {'strategy': {'sharpe': 0.9}, 'buy_and_hold': {'sharpe': 0.7}, 'trades': 3, 'win_rate': null, 'exposure': 0.5},
+          'train': {
+            'strategy': {'sharpe': 1.2},
+            'buy_and_hold': {'sharpe': 0.8},
+            'trades': 9,
+            'win_rate': 0.55,
+            'exposure': 0.6,
+          },
+          'test': {
+            'strategy': {'sharpe': 0.9},
+            'buy_and_hold': {'sharpe': 0.7},
+            'trades': 3,
+            'win_rate': null,
+            'exposure': 0.5,
+          },
           'test_period': {'start': '2025-01-02', 'end': '2026-09-30', 'bars': 400},
           'curves': {
             'train': [

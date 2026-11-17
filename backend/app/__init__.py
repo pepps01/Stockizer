@@ -26,6 +26,7 @@ class ApplicationFactory:
 
         container = build_container(app.config)
         app.extensions["container"] = container
+        self._load_users_from_tokens(container)
         container.cors.apply(app)
         container.error_handler().register(app)
         for controller in container.controllers():
@@ -42,6 +43,22 @@ class ApplicationFactory:
             with app.app_context():
                 db.create_all()
         return app
+
+    @staticmethod
+    def _load_users_from_tokens(container: Container) -> None:
+        """Every authenticated request loads its user; a deleted or disabled
+        account makes the token invalid (401) even before it expires."""
+
+        @jwt.user_lookup_loader
+        def load_user(_header, payload):
+            user = container.users.get_by_id(payload["sub"])
+            return user if user is not None and user.is_active is not False else None
+
+        @jwt.user_lookup_error_loader
+        def user_rejected(_header, _payload):
+            from flask import jsonify
+
+            return jsonify(error="Your session has ended. Please log in again."), 401
 
     @staticmethod
     def _configure_logging() -> None:

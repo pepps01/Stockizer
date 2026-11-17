@@ -45,6 +45,14 @@ class IBacktester(ABC):
 
 
 class ISignalEngine(ABC):
+    key: str  # stable identifier stored on optimizer runs, e.g. "algebraic"
+    label: str
+    description: str
+
+    @abstractmethod
+    def enforce(self, params: dict, bounds: dict) -> dict:
+        """Clamp a candidate into `bounds`, round integers, apply the engine's constraints."""
+
     @property
     @abstractmethod
     def param_specs(self) -> tuple[ParamSpec, ...]: ...
@@ -85,3 +93,25 @@ class IParameterSearch(ABC):
     @abstractmethod
     def search(self, objective: Callable[[dict], float], bounds: dict, seed: int) -> tuple[float, dict, int]:
         """Maximise `objective` inside `bounds`; returns (best score, best params, evaluations)."""
+
+
+class IStrategyRegistry(ABC):
+    """The signal engines the Optimizer can tune and the Adviser can run."""
+
+    @property
+    @abstractmethod
+    def default(self) -> ISignalEngine: ...
+
+    @abstractmethod
+    def get(self, key: str | None) -> ISignalEngine | None: ...
+
+    @abstractmethod
+    def all(self) -> list[ISignalEngine]: ...
+
+
+class IStyleClassifier(ABC):
+    """Labels stocks growth / value / blend from their fundamentals."""
+
+    @abstractmethod
+    def classify(self, fundamentals: dict[str, dict]) -> dict[str, dict]:
+        """{symbol: {"style": "growth" | "value" | "blend" | None, "style_score": float | None}}"""

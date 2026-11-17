@@ -230,13 +230,24 @@ class SyntheticFundamentalsProvider(IFundamentalsProvider):
         shares = 10 ** rng.uniform(8.3, 10.3)
         pe = rng.uniform(4.5, 28.0)
         price = price or float(ticker.base_price or 0)
+        # Growthier firms (higher P/E) grow faster, trade at more times book and
+        # pay less out, so growth / value screens behave plausibly on simulated markets.
+        tilt = (pe - 4.5) / 23.5
+        style_rng = np.random.default_rng(SyntheticMarketModel.seed("style", ticker.symbol))
+        dividend_yield = float(max(0.0, 7.5 * (1 - tilt) + style_rng.normal(0, 1.2)))
+        price_to_book = float(max(0.3, 0.6 + 5.5 * tilt + style_rng.normal(0, 0.5)))
+        revenue_growth = float(-0.03 + 0.30 * tilt + style_rng.normal(0, 0.05))
+        earnings_growth = float(-0.05 + 0.40 * tilt + style_rng.normal(0, 0.08))
         return {
             "market_cap": price * shares if price else None,
             "pe_ratio": pe,
             "forward_pe": pe * rng.uniform(0.75, 1.05),
             "eps": price / pe if price else None,
-            "dividend_yield": rng.uniform(0.0, 8.5),  # percent, like yfinance
+            "dividend_yield": dividend_yield,  # percent, like yfinance
             "beta": rng.uniform(0.6, 1.4),
+            "price_to_book": price_to_book,
+            "revenue_growth": revenue_growth,
+            "earnings_growth": earnings_growth,
             "fifty_two_week_high": None,
             "fifty_two_week_low": None,
             "employees": float(round(10 ** rng.uniform(2.7, 4.8))),

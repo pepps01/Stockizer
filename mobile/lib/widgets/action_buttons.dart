@@ -61,7 +61,7 @@ class _WatchlistButtonState extends State<WatchlistButton> {
 }
 
 /// "I buy / I hold / I sell" — records the user's own decision in their
-/// journal. Algizer never places orders.
+/// journal. Stockiser never places orders.
 class JournalButtons extends StatelessWidget {
   const JournalButtons({super.key, required this.symbol});
 
@@ -71,8 +71,8 @@ class JournalButtons extends StatelessWidget {
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
     try {
-      await context.read<ApiClient>().recordAction(token, symbol, action);
-      if (context.mounted) showSnack(context, 'Noted “$action” in your journal — Algizer never places orders.');
+      await context.read<ApiClient>().setAssumption(token, symbol, action);
+      if (context.mounted) showSnack(context, 'Assumed $action. Track it in your Investor profile. Stockiser never places orders.');
     } catch (e) {
       if (context.mounted) showSnack(context, errorMessage(e), error: true);
     }
@@ -89,11 +89,11 @@ class JournalButtons extends StatelessWidget {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 foregroundColor: color,
-                side: BorderSide(color: color.withValues(alpha: 0.4)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: () => _record(context, action),
-              child: Text('I ${action[0].toUpperCase()}${action.substring(1)}'),
+              child: Text('Assume $action'),
             ),
           ),
           if (action != 'sell') const SizedBox(width: 8),

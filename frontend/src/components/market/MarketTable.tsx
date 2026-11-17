@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { MarketRow } from "@/lib/types";
-import { changeClass, currencyLabel, formatNumber, formatPercent, formatSigned, symbolHref } from "@/lib/format";
+import { changeClass, currencyLabel, formatCompact, formatNumber, formatPercent, formatSigned, symbolHref } from "@/lib/format";
 import { useLiveQuotes } from "@/lib/realtime";
 import { Flag } from "@/components/ui/Flag";
 import { RatingLabel, SourceBadge } from "@/components/ui/Badges";
@@ -21,21 +21,43 @@ const PERF_COLUMNS: { key: keyof NonNullable<MarketRow["performance"]>; label: s
 ];
 
 /** Indices / stocks table with TradingView's Overview · Performance · Technicals tabs. Quotes stream live. */
-export function MarketTable({ rows, loading, showCountry = true, symbolLabel = "Symbol" }: { rows: MarketRow[] | null; loading?: boolean; showCountry?: boolean; symbolLabel?: string }) {
+export function MarketTable({
+  rows,
+  loading,
+  showCountry = true,
+  symbolLabel = "Symbol",
+  showVolume = false,
+  action,
+  rowMenu,
+}: {
+  rows: MarketRow[] | null;
+  loading?: boolean;
+  showCountry?: boolean;
+  symbolLabel?: string;
+  /** Adds a Volume column to the Overview tab. */
+  showVolume?: boolean;
+  /** Rendered beside the view tabs, e.g. a "Get Financials" button. */
+  action?: React.ReactNode;
+  /** A per-row control in a last column, e.g. the Assume / watchlist menu. */
+  rowMenu?: (row: MarketRow) => React.ReactNode;
+}) {
   const [view, setView] = useState<View>("overview");
   const live = useLiveQuotes(rows?.map((r) => r.symbol) ?? []);
 
   return (
     <div>
-      <Segmented
-        value={view}
-        onChange={setView}
-        options={[
-          { value: "overview", label: "Overview" },
-          { value: "performance", label: "Performance" },
-          { value: "technicals", label: "Technicals" },
-        ]}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Segmented
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "overview", label: "Overview" },
+            { value: "performance", label: "Performance" },
+            { value: "technicals", label: "Technicals" },
+          ]}
+        />
+        {action}
+      </div>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
           <thead>
@@ -43,16 +65,17 @@ export function MarketTable({ rows, loading, showCountry = true, symbolLabel = "
               <th className="py-2 pr-3 text-left font-normal">
                 {symbolLabel} <span className="block text-[11px]">{rows?.length ?? ""}</span>
               </th>
-              {view === "overview" && ["Price", "Chg %", "Chg", "High", "Low", "Tech rating"].map((h) => <Th key={h}>{h}</Th>)}
+              {view === "overview" && ["Price", "Chg %", "Chg", "High", "Low", ...(showVolume ? ["Volume"] : []), "Tech rating"].map((h) => <Th key={h}>{h}</Th>)}
               {view === "performance" && [...PERF_COLUMNS.map((c) => c.label), "Volatility 1M"].map((h) => <Th key={h}>{h}</Th>)}
               {view === "technicals" && ["Tech rating", "MA rating", "Oscillators rating"].map((h) => <Th key={h}>{h}</Th>)}
+              {rowMenu && <th className="w-px py-2 pl-2" aria-label="Actions" />}
             </tr>
           </thead>
           <tbody>
             {loading && !rows?.length &&
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-border/60">
-                  <td colSpan={8} className="py-3">
+                  <td colSpan={10} className="py-3">
                     <Skeleton className="h-6 w-full" />
                   </td>
                 </tr>
@@ -81,6 +104,7 @@ export function MarketTable({ rows, loading, showCountry = true, symbolLabel = "
                       </Td>
                       <Td>{formatNumber(q?.high)}</Td>
                       <Td>{formatNumber(q?.low)}</Td>
+                      {showVolume && <Td>{formatCompact(q?.volume)}</Td>}
                       <Td>
                         <RatingLabel label={row.technicals?.label} />
                       </Td>
@@ -109,6 +133,7 @@ export function MarketTable({ rows, loading, showCountry = true, symbolLabel = "
                       </Td>
                     </>
                   )}
+                  {rowMenu && <td className="py-1.5 pl-2 text-right">{rowMenu(row)}</td>}
                 </tr>
               );
             })}

@@ -25,9 +25,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     return Scaffold(
-      backgroundColor: AppPalette.light.brand,
+      backgroundColor: AppPalette.light.ink,
       body: SafeArea(
         child: Column(
           children: [
@@ -38,9 +37,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               opacity: _fade,
               child: const Column(
                 children: [
-                  Text('Algizer', style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                  Text('Stockiser', style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
                   SizedBox(height: 6),
-                  Text('Evalucre Capital · algebraic adviser', style: TextStyle(color: Color(0xDDFFFFFF), fontSize: 15)),
+                  Text('Signals, not noise.', style: TextStyle(color: Color(0xCCFFFFFF), fontSize: 16, fontWeight: FontWeight.w300)),
                 ],
               ),
             ),
@@ -50,13 +49,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               child: SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.2, color: p.brandForeground.withValues(alpha: 0.85)),
+                child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white.withValues(alpha: 0.85)),
               ),
             ),
             const SizedBox(height: 18),
             FadeTransition(
               opacity: _fade,
-              child: const Text('Selector · Optimizer · Adviser', style: TextStyle(color: Color(0xAAFFFFFF), fontSize: 12.5, letterSpacing: 0.4)),
+              child: const Text('SELECT · OPTIMIZE · ADVISE', style: TextStyle(color: Color(0xAAFFFFFF), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.3)),
             ),
             const SizedBox(height: 28),
           ],

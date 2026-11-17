@@ -1,7 +1,11 @@
 export type DataSource = "yahoo" | "synthetic";
 export type SignalType = "BUY" | "SELL" | "HOLD";
 export type RiskProfile = "conservative" | "moderate" | "aggressive";
-export type AlertChannel = "in_app" | "email";
+export type AlertChannel = "in_app" | "email" | "push";
+export type StockType = "equity" | "growth" | "value";
+export type StockStyle = "growth" | "value" | "blend";
+export type StrategyKey = "algebraic" | "indicators";
+export type Stance = "buy" | "hold" | "sell";
 export type UserActionType = "hold" | "buy" | "sell" | "view";
 
 export interface User {
@@ -10,6 +14,8 @@ export interface User {
   first_name: string;
   last_name: string;
   is_verified: boolean;
+  is_admin?: boolean;
+  is_active?: boolean;
   risk_profile: RiskProfile;
   alert_channels: AlertChannel[];
   default_exchange: string | null;
@@ -150,7 +156,8 @@ export interface Bar {
   volume: number;
 }
 
-export type SignalParams = Record<"fast" | "slow" | "window" | "trend_weight" | "threshold", number>;
+/** Parameter values by name; the names depend on the strategy (see ParamOption). */
+export type SignalParams = Record<string, number>;
 
 export interface AdviserSignal {
   signal_type: SignalType;
@@ -159,7 +166,9 @@ export interface AdviserSignal {
   price: number;
   as_of: string;
   reason: string;
-  components: { trend: number; z: number };
+  strategy: StrategyKey;
+  /** algebraic: trend, z · indicators: macd_hist, rsi, stoch_d */
+  components: Record<string, number>;
   parameters: SignalParams;
   data_source: DataSource;
   market_open: boolean;
@@ -204,6 +213,8 @@ export interface SelectorResult extends TickerBrief {
     start_price: number;
     end_price: number;
     bars: number;
+    style?: StockStyle | null;
+    style_score?: number | null;
   };
 }
 
@@ -215,6 +226,7 @@ export interface SelectorRun {
   period_end: string;
   metric: string;
   top_n: number;
+  stock_type: StockType;
   universe_size: number;
   artifact_id: string | null;
   created_at: string;
@@ -252,6 +264,7 @@ export interface OptimizerRun extends TickerBrief {
   training_end: string;
   bounds: Record<string, [number, number]>;
   objective: string;
+  strategy: StrategyKey;
   best_score: number | null;
   parameters: SignalParams;
   metrics: {
@@ -270,7 +283,7 @@ export interface OptimizerRun extends TickerBrief {
 }
 
 export interface ParamOption {
-  name: keyof SignalParams;
+  name: string;
   type: "int" | "float";
   low: number;
   high: number;
@@ -291,4 +304,117 @@ export interface AdviserSession extends TickerBrief {
   last_price: number | null;
   last_score: number | null;
   last_confidence: number | null;
+}
+
+export interface UserActionRecord {
+  id: string;
+  symbol: string;
+  action: UserActionType;
+  created_at: string;
+}
+
+export interface StockTypeOption {
+  value: StockType;
+  label: string;
+  description: string;
+}
+
+export interface StrategyOption {
+  key: StrategyKey;
+  label: string;
+  description: string;
+  parameters: ParamOption[];
+}
+
+// ---- admin ----
+
+export interface AdminUser extends User {
+  activity: { selector_runs: number; optimizer_runs: number; active_sessions: number };
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  admin_email: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AdminOverview {
+  users: { total: number; verified: number; admins: number; disabled: number; new_7d: number };
+  pipeline: { selector_runs: number; optimizer_runs: number; active_sessions: number; signals_24h: number; push_devices: number };
+  system: { market_data_mode: string; push_enabled: boolean; email_enabled: boolean; adviser_worker: boolean };
+  recent_users: User[];
+  recent_signals: (SignalEvent & { user_email: string })[];
+  recent_actions: AdminAuditEntry[];
+}
+
+export interface AdminExchange {
+  code: string;
+  name: string;
+  country_code: string;
+  data_source: DataSource;
+  active_stocks: number;
+  total_stocks: number;
+}
+
+export interface AdminTicker {
+  symbol: string;
+  display_symbol: string;
+  name: string;
+  sector: string | null;
+  kind: "stock" | "index";
+  data_source: DataSource;
+  active: boolean;
+}
+
+// ---- index members & financials ----
+
+export interface IndexMembers {
+  index: TickerInfo;
+  countries: string[];
+  stocks: MarketRow[];
+}
+
+export interface FinancialStock extends TickerInfo {
+  quote: Quote | null;
+  style: StockStyle | null;
+  style_score: number | null;
+  fundamentals: {
+    market_cap: number | null;
+    pe_ratio: number | null;
+    forward_pe: number | null;
+    price_to_book: number | null;
+    dividend_yield: number | null;
+    revenue_growth: number | null;
+    earnings_growth: number | null;
+  };
+}
+
+export interface FinancialSegment {
+  key: "growth" | "value" | "equity";
+  label: string;
+  definition: string;
+  traits: string[];
+  stocks: FinancialStock[];
+}
+
+export interface IndexFinancials {
+  index: TickerInfo;
+  countries: string[];
+  segments: FinancialSegment[];
+  unclassified: number;
+}
+
+export interface Assumption extends TickerInfo {
+  id: string;
+  stance: Stance;
+  /** Price when the call was made. */
+  price: number | null;
+  quote: Quote | null;
+  change_since_percent: number | null;
+  created_at: string;
+  updated_at: string;
 }

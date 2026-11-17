@@ -11,7 +11,7 @@ export function PageHeader({ title, subtitle, actions, icon }: { title: ReactNod
       <div className="flex items-center gap-3">
         {icon}
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+          <h1 className="text-[28px] font-bold tracking-tight sm:text-[32px]">{title}</h1>
           {subtitle && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{subtitle}</p>}
         </div>
       </div>
@@ -20,12 +20,13 @@ export function PageHeader({ title, subtitle, actions, icon }: { title: ReactNod
   );
 }
 
+/** A page section: top hairline, small-caps title, content. Rules, not boxes. */
 export function Card({ children, className = "", title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
   return (
-    <section className={`card p-5 ${className}`}>
+    <section className={`border-t border-border pt-5 pb-2 ${className}`}>
       {(title || action) && (
-        <div className="mb-4 flex items-center justify-between gap-3">
-          {title && <h2 className="text-base font-semibold">{title}</h2>}
+        <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
+          {typeof title === "string" ? <h2 className="label-caps">{title}</h2> : title}
           {action}
         </div>
       )}
@@ -52,7 +53,7 @@ export function Skeleton({ className = "" }: { className?: string }) {
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center">
-      <p className="font-medium">{title}</p>
+      <p className="font-bold">{title}</p>
       {children && <div className="mt-2 text-sm text-muted-foreground">{children}</div>}
     </div>
   );
@@ -65,12 +66,14 @@ export function ErrorNote({ message }: { message: string | null | undefined }) {
 
 export function Segmented<T extends string>({ options, value, onChange }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="inline-flex rounded-lg bg-surface-muted p-1 text-sm">
+    <div className="inline-flex rounded-full bg-surface-muted p-1 text-[13px]">
       {options.map((o) => (
         <button
           key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`rounded-md px-3 py-1.5 font-medium transition-colors ${value === o.value ? "bg-surface text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+          className={`min-h-8 rounded-full px-3.5 font-bold transition-colors ${value === o.value ? "bg-ink text-ink-foreground" : "text-muted-foreground hover:text-foreground"}`}
         >
           {o.label}
         </button>
@@ -85,7 +88,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
       <dt className="text-xs text-muted-foreground" title={hint}>
         {label}
       </dt>
-      <dd className="tabular mt-0.5 font-medium">{value}</dd>
+      <dd className="tabular mt-0.5 text-[15px]">{value}</dd>
     </div>
   );
 }
@@ -93,7 +96,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium">{label}</span>
+      <span className="mb-1.5 block text-sm font-bold">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>}
     </label>

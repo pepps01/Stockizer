@@ -20,15 +20,17 @@ import pandas as pd
 from app.contracts.analytics import IBacktester, IReturnStatistics, ISignalEngine, ParamSpec
 
 
-class AlgebraicSignalEngine(ISignalEngine):
+class SignalEngineBase(ISignalEngine):
+    """Strategy-independent half of a signal engine: parameter handling, the
+    BUY/SELL/HOLD classification of a score in [-1, 1], confidence, and the
+    long/flat backtest. Subclasses supply `components()` (which must include
+    `close` and `score` columns), `warmup_bars()`, `backtester()` and `_explain()`."""
+
     TRANSACTION_COST = 0.001  # 10 bps per position change
-    PARAM_SPECS = (
-        ParamSpec("fast", int, 5, 30, 12, "Fast EMA span (days)"),
-        ParamSpec("slow", int, 30, 150, 50, "Slow EMA span (days)"),
-        ParamSpec("window", int, 10, 60, 20, "Volatility / mean-reversion window (days)"),
-        ParamSpec("trend_weight", float, 0.0, 1.0, 0.6, "Weight on trend vs. mean reversion"),
-        ParamSpec("threshold", float, 0.1, 0.8, 0.3, "Signal threshold θ"),
-    )
+    PARAM_SPECS: tuple[ParamSpec, ...] = ()
+    key = ""
+    label = ""
+    description = ""
 
     def __init__(self, statistics: IReturnStatistics):
         self._stats = statistics
@@ -52,27 +54,23 @@ class AlgebraicSignalEngine(ISignalEngine):
             if params.get(name) is not None:
                 value = min(max(float(params[name]), spec.low), spec.high)
                 out[name] = int(round(value)) if spec.kind is int else value
-        if out["slow"] <= out["fast"] + 5:
-            out["slow"] = min(self._specs["slow"].high, out["fast"] + 6)
-        return out
+        return self._constrain(out, {name: spec.high for name, spec in self._specs.items()})
 
-    def warmup_bars(self, params: dict) -> int:
-        return int(max(params["slow"] * 3, params["window"] * 2, 60))
+    def enforce(self, params: dict, bounds: dict) -> dict:
+        """Clamp a candidate into `bounds`, round integer parameters and apply the
+        engine's own constraints (e.g. slow span > fast span)."""
+        params = self.clean_params(params)
+        out = {}
+        for spec in self.PARAM_SPECS:
+            lo, hi = bounds[spec.name]
+            value = min(max(params[spec.name], lo), hi)
+            out[spec.name] = int(round(value)) if spec.kind is int else round(float(value), 6)
+        return self._constrain(out, {name: hi for name, (_, hi) in bounds.items()})
+
+    def _constrain(self, params: dict, upper: dict) -> dict:
+        return params
 
     # ---- signal --------------------------------------------------------------------------
-
-    def components(self, close: pd.Series, params: dict) -> pd.DataFrame:
-        p = self.clean_params(params)
-        log_ret = np.log(close).diff()
-        sigma = log_ret.rolling(p["window"], min_periods=p["window"]).std()
-        ema_fast = close.ewm(span=p["fast"], adjust=False).mean()
-        ema_slow = close.ewm(span=p["slow"], adjust=False).mean()
-        trend = (ema_fast / ema_slow - 1) / (sigma * np.sqrt(p["slow"]))
-        mean = close.rolling(p["window"]).mean()
-        z = (close - mean) / close.rolling(p["window"]).std().replace(0, np.nan)
-        w = p["trend_weight"]
-        score = w * np.tanh(trend) - (1 - w) * np.tanh(z / 2)
-        return pd.DataFrame({"close": close, "trend": trend, "z": z, "score": score, "ema_fast": ema_fast, "ema_slow": ema_slow})
 
     @staticmethod
     def classify(score: float, threshold: float) -> str:
@@ -97,8 +95,7 @@ class AlgebraicSignalEngine(ISignalEngine):
         row = comp.iloc[-1]
         score = float(row["score"])
         signal_type = self.classify(score, p["threshold"])
-        trend_dir = "above" if row["ema_fast"] >= row["ema_slow"] else "below"
-        stretch = "above" if row["z"] >= 0 else "below"
+        reason, components = self._explain(row, p)
         as_of = comp.index[-1]
         return {
             "signal_type": signal_type,
@@ -106,14 +103,17 @@ class AlgebraicSignalEngine(ISignalEngine):
             "confidence": self.confidence(score, p["threshold"]),
             "price": float(row["close"]),
             "as_of": as_of.isoformat() if hasattr(as_of, "isoformat") else str(as_of),
-            "reason": (
-                f"EMA{p['fast']} is {trend_dir} EMA{p['slow']} (trend {row['trend']:+.2f}σ); "
-                f"price is {abs(row['z']):.1f}σ {stretch} its {p['window']}-day mean. "
-                f"Score {score:+.2f} vs threshold ±{p['threshold']:.2f} → {signal_type}."
-            ),
-            "components": {"trend": float(row["trend"]), "z": float(row["z"])},
+            "reason": f"{reason} Score {score:+.2f} vs threshold ±{p['threshold']:.2f} → {signal_type}.",
+            "strategy": self.key,
+            "components": components,
             "parameters": p,
         }
+
+    def components(self, close: pd.Series, params: dict) -> pd.DataFrame:
+        raise NotImplementedError
+
+    def _explain(self, row: pd.Series, p: dict) -> tuple[str, dict]:
+        raise NotImplementedError
 
     # ---- backtesting ---------------------------------------------------------------------
 
@@ -151,9 +151,6 @@ class AlgebraicSignalEngine(ISignalEngine):
             "benchmark_equity": (1 + daily).cumprod(),
         }
 
-    def backtester(self, close: pd.Series, start=None, end=None) -> IBacktester:
-        return FastBacktester(self, self._stats, close, start, end)
-
     @staticmethod
     def _trade_returns(pos: pd.Series, daily: pd.Series) -> list[float]:
         held = pos.shift(1).fillna(0.0)
@@ -169,23 +166,107 @@ class AlgebraicSignalEngine(ISignalEngine):
         return results
 
 
+class AlgebraicSignalEngine(SignalEngineBase):
+    key = "algebraic"
+    label = "Algebraic trend + mean reversion"
+    description = "Blends an EMA trend, measured in volatility units, with the stretch from a moving average."
+    PARAM_SPECS = (
+        ParamSpec("fast", int, 5, 30, 12, "Fast EMA span (days)"),
+        ParamSpec("slow", int, 30, 150, 50, "Slow EMA span (days)"),
+        ParamSpec("window", int, 10, 60, 20, "Volatility / mean-reversion window (days)"),
+        ParamSpec("trend_weight", float, 0.0, 1.0, 0.6, "Weight on trend vs. mean reversion"),
+        ParamSpec("threshold", float, 0.1, 0.8, 0.3, "Signal threshold θ"),
+    )
+
+    def _constrain(self, params: dict, upper: dict) -> dict:
+        if params["slow"] <= params["fast"] + 5:
+            params["slow"] = int(min(upper["slow"], params["fast"] + 6))
+        return params
+
+    def warmup_bars(self, params: dict) -> int:
+        return int(max(params["slow"] * 3, params["window"] * 2, 60))
+
+    # ---- signal --------------------------------------------------------------------------
+
+    def components(self, close: pd.Series, params: dict) -> pd.DataFrame:
+        p = self.clean_params(params)
+        log_ret = np.log(close).diff()
+        sigma = log_ret.rolling(p["window"], min_periods=p["window"]).std()
+        ema_fast = close.ewm(span=p["fast"], adjust=False).mean()
+        ema_slow = close.ewm(span=p["slow"], adjust=False).mean()
+        trend = (ema_fast / ema_slow - 1) / (sigma * np.sqrt(p["slow"]))
+        mean = close.rolling(p["window"]).mean()
+        z = (close - mean) / close.rolling(p["window"]).std().replace(0, np.nan)
+        w = p["trend_weight"]
+        score = w * np.tanh(trend) - (1 - w) * np.tanh(z / 2)
+        return pd.DataFrame({"close": close, "trend": trend, "z": z, "score": score, "ema_fast": ema_fast, "ema_slow": ema_slow})
+
+    def _explain(self, row: pd.Series, p: dict) -> tuple[str, dict]:
+        trend_dir = "above" if row["ema_fast"] >= row["ema_slow"] else "below"
+        stretch = "above" if row["z"] >= 0 else "below"
+        reason = (
+            f"EMA{p['fast']} is {trend_dir} EMA{p['slow']} (trend {row['trend']:+.2f}σ); "
+            f"price is {abs(row['z']):.1f}σ {stretch} its {p['window']}-day mean."
+        )
+        return reason, {"trend": float(row["trend"]), "z": float(row["z"])}
+
+    # ---- backtesting ---------------------------------------------------------------------
+
+    def backtester(self, close: pd.Series, start=None, end=None) -> IBacktester:
+        return FastBacktester(self, self._stats, close, start, end)
+
+
+class LongFlatSimulator:
+    """The numpy half of every fast backtester: turn a score array into
+    long/flat positions and return statistics over the evaluation window,
+    exactly as `SignalEngineBase.backtest` does with pandas."""
+
+    def __init__(self, statistics: IReturnStatistics, close: np.ndarray, mask: np.ndarray, cost: float):
+        self._stats = statistics
+        self._mask = mask
+        self._cost = cost
+        self._daily = np.concatenate([[0.0], close[1:] / close[:-1] - 1])
+
+    @staticmethod
+    def window_mask(close: pd.Series, start=None, end=None) -> np.ndarray:
+        mask = np.ones(len(close), dtype=bool)
+        if start is not None:
+            mask &= np.array([d >= start for d in close.index])
+        if end is not None:
+            mask &= np.array([d <= end for d in close.index])
+        return mask
+
+    def run(self, score: np.ndarray, threshold: float) -> tuple[dict, int]:
+        raw = np.where(score > threshold, 1.0, np.where(score < -threshold, 0.0, np.nan))
+        filled_at = np.where(~np.isnan(raw), np.arange(raw.size), 0)
+        np.maximum.accumulate(filled_at, out=filled_at)
+        pos = np.nan_to_num(raw[filled_at], nan=0.0)
+
+        held = np.concatenate([[0.0], pos[:-1]])
+        strat = held * self._daily - self._cost * np.abs(np.diff(pos, prepend=pos[0]))
+
+        m = self._mask
+        if m.sum() < 2:
+            return self._stats.from_array(np.array([])), 0
+        window_pos = pos[m]
+        # Same entry count as `backtest`: position increases inside the window,
+        # plus an already-open position at its first bar.
+        entries = int((np.diff(window_pos, prepend=window_pos[0]) > 0).sum() + (window_pos[0] > 0))
+        return self._stats.from_array(strat[m]), entries
+
+
 class FastBacktester(IBacktester):
     """Numpy re-implementation of AlgebraicSignalEngine.backtest for the
     optimiser's inner loop. Indicator series depend only on the integer
     spans/windows, so each is computed once per distinct value and reused across
     the ~200 candidate parameter sets. Results match `backtest` exactly."""
 
-    def __init__(self, engine: AlgebraicSignalEngine, statistics: IReturnStatistics, close: pd.Series, start=None, end=None):
+    def __init__(self, engine: SignalEngineBase, statistics: IReturnStatistics, close: pd.Series, start=None, end=None):
         self._engine = engine
         self._stats = statistics
         self._c = close.to_numpy(dtype=float)
-        mask = np.ones(len(close), dtype=bool)
-        if start is not None:
-            mask &= np.array([d >= start for d in close.index])
-        if end is not None:
-            mask &= np.array([d <= end for d in close.index])
-        self._mask = mask
-        self._daily = np.concatenate([[0.0], self._c[1:] / self._c[:-1] - 1])
+        mask = LongFlatSimulator.window_mask(close, start, end)
+        self._sim = LongFlatSimulator(statistics, self._c, mask, engine.TRANSACTION_COST)
         self._log_ret = pd.Series(np.concatenate([[np.nan], np.diff(np.log(self._c))]))
         self._ema: dict[int, np.ndarray] = {}
         self._rolling: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
@@ -199,22 +280,7 @@ class FastBacktester(IBacktester):
         w, th = p["trend_weight"], p["threshold"]
         score = np.nan_to_num(w * np.tanh(trend) - (1 - w) * np.tanh(z / 2), nan=0.0)
 
-        raw = np.where(score > th, 1.0, np.where(score < -th, 0.0, np.nan))
-        filled_at = np.where(~np.isnan(raw), np.arange(raw.size), 0)
-        np.maximum.accumulate(filled_at, out=filled_at)
-        pos = np.nan_to_num(raw[filled_at], nan=0.0)
-
-        held = np.concatenate([[0.0], pos[:-1]])
-        strat = held * self._daily - self._engine.TRANSACTION_COST * np.abs(np.diff(pos, prepend=pos[0]))
-
-        m = self._mask
-        if m.sum() < 2:
-            return self._stats.from_array(np.array([])), 0
-        window_pos = pos[m]
-        # Same entry count as `backtest`: position increases inside the window,
-        # plus an already-open position at its first bar.
-        entries = int((np.diff(window_pos, prepend=window_pos[0]) > 0).sum() + (window_pos[0] > 0))
-        return self._stats.from_array(strat[m]), entries
+        return self._sim.run(score, th)
 
     def _ema_of(self, span: int) -> np.ndarray:
         if span not in self._ema:

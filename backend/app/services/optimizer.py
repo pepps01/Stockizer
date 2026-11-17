@@ -6,11 +6,11 @@ import hashlib
 import json
 import math
 from datetime import date, timedelta
-from typing import Callable
+from typing import Any, Callable, cast
 
 import pandas as pd
 
-from app.contracts.analytics import IParameterSearch, ISignalEngine
+from app.contracts.analytics import IParameterSearch, ISignalEngine, IStrategyRegistry
 from app.contracts.repositories import ICatalogRepository, IOptimizerRunRepository, IUnitOfWork
 from app.contracts.services import IArtifactStore, IMarketDataService, IOptimizerService, ISelectorService
 from app.domain.errors import ValidationError
@@ -87,15 +87,7 @@ class StrategyOptimisation:
         return value if math.isfinite(value) else self.PENALTY
 
     def _within(self, params: dict) -> dict:
-        params = self._engine.clean_params(params)
-        out = {}
-        for spec in self._engine.param_specs:
-            lo, hi = self._bounds[spec.name]
-            value = min(max(params[spec.name], lo), hi)
-            out[spec.name] = int(round(value)) if spec.kind is int else round(float(value), 6)
-        if out["slow"] <= out["fast"] + 5:
-            out["slow"] = int(min(self._bounds["slow"][1], out["fast"] + 6))
-        return out
+        return self._engine.enforce(params, self._bounds)
 
     @staticmethod
     def _summary(result: dict) -> dict:
@@ -132,7 +124,7 @@ class OptimizerService(IOptimizerService):
         runs: IOptimizerRunRepository,
         selector: ISelectorService,
         uow: IUnitOfWork,
-        engine: ISignalEngine,
+        strategies: IStrategyRegistry,
         search_factory: Callable[[ISignalEngine], IParameterSearch],
     ):
         self._catalog = catalog
@@ -141,29 +133,43 @@ class OptimizerService(IOptimizerService):
         self._runs = runs
         self._selector = selector
         self._uow = uow
-        self._engine = engine
+        self._strategies = strategies
         self._search_factory = search_factory
 
     def options(self) -> dict:
+        strategies = [
+            {"key": e.key, "label": e.label, "description": e.description, "parameters": self._param_options(e)}
+            for e in self._strategies.all()
+        ]
         return {
             "objectives": list(OPTIMIZER_OBJECTIVES),
-            "parameters": [
-                {"name": s.name, "type": s.kind.__name__, "low": s.low, "high": s.high, "default": s.default, "description": s.description}
-                for s in self._engine.param_specs
-            ],
+            "strategies": strategies,
+            "default_strategy": self._strategies.default.key,
+            "parameters": strategies[0]["parameters"],  # the default strategy's, for older clients
         }
 
-    def run(self, *, user_id, symbols, selector_run_id, top_k, training_start, training_end, objective, bounds) -> list[OptimizerRun]:
+    @staticmethod
+    def _param_options(engine: ISignalEngine) -> list[dict]:
+        return [
+            {"name": s.name, "type": s.kind.__name__, "low": s.low, "high": s.high, "default": s.default, "description": s.description}
+            for s in engine.param_specs
+        ]
+
+    def run(self, *, user_id, symbols, selector_run_id, top_k, training_start, training_end, objective, bounds,
+            strategy: str = "algebraic") -> list[OptimizerRun]:
+        engine = self._strategies.get(strategy)
+        if engine is None:
+            raise ValidationError(f"strategy must be one of {', '.join(e.key for e in self._strategies.all())}")
         if objective not in OPTIMIZER_OBJECTIVES:
             raise ValidationError(f"objective must be one of {', '.join(OPTIMIZER_OBJECTIVES)}")
         if training_end <= training_start:
             raise ValidationError("training_end must be after training_start")
         if training_end > date.today():
             raise ValidationError("training_end cannot be in the future")
-        bounds = self._validate_bounds(bounds)
+        bounds = self._validate_bounds(engine, bounds)
         tickers = self._resolve_tickers(user_id, symbols, selector_run_id, top_k)
 
-        warmup_days = int(bounds["slow"][1] * 3 * 1.5) + 10
+        warmup_days = int(engine.warmup_bars({name: hi for name, (_, hi) in bounds.items()}) * 1.5) + 10
         history = self._data.history(tickers, training_start - timedelta(days=warmup_days))
 
         runs = []
@@ -177,11 +183,12 @@ class OptimizerService(IOptimizerService):
                 training_end=training_end,
                 bounds=bounds,
                 objective=objective,
+                strategy=engine.key,
             )
             self._runs.add(run)
             runs.append(run)
             optimisation = StrategyOptimisation(
-                self._engine, self._search_factory(self._engine), history[ticker.symbol]["close"],
+                engine, self._search_factory(engine), history[ticker.symbol]["close"],
                 training_start, training_end, objective, bounds,
             )
             try:
@@ -217,7 +224,8 @@ class OptimizerService(IOptimizerService):
             selector_run = self._selector.get_run(user_id, selector_run_id)
             if selector_run is None:
                 raise ValidationError("Selector run not found")
-            tickers = [r.ticker for r in selector_run.results[: top_k or len(selector_run.results)]]
+            results = cast(list[Any], selector_run.results)
+            tickers = [r.ticker for r in results[: top_k or len(results)]]
         if symbols:
             found = {t.symbol.upper(): t for t in self._catalog.tickers_by_symbols(symbols)}
             unknown = [s for s in symbols if s.upper() not in found]
@@ -230,9 +238,10 @@ class OptimizerService(IOptimizerService):
             raise ValidationError(f"Optimise at most {self.MAX_TICKERS_PER_REQUEST} tickers per request")
         return tickers
 
-    def _validate_bounds(self, bounds: dict | None) -> dict:
-        out = self._engine.default_bounds()
-        specs = {s.name: s for s in self._engine.param_specs}
+    @staticmethod
+    def _validate_bounds(engine: ISignalEngine, bounds: dict | None) -> dict:
+        out = engine.default_bounds()
+        specs = {s.name: s for s in engine.param_specs}
         for name, value in (bounds or {}).items():
             spec = specs.get(name)
             if spec is None:
@@ -250,6 +259,7 @@ class OptimizerService(IOptimizerService):
         payload = {
             "symbol": ticker.symbol,
             "objective": run.objective,
+            "strategy": run.strategy,
             "training_start": run.training_start.isoformat(),
             "training_end": run.training_end.isoformat(),
             "parameters": result["params"],
@@ -259,7 +269,7 @@ class OptimizerService(IOptimizerService):
         return self._artifacts.save(
             owner_id=user_id,
             kind="params_json",
-            filename=f"optimizer_{ticker.display_symbol}_{run.training_start}_{run.training_end}.json",
+            filename=f"optimizer_{ticker.display_symbol}_{run.strategy}_{run.training_start}_{run.training_end}.json",
             content=json.dumps(payload, indent=2).encode(),
             content_type="application/json",
         )

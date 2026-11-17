@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// The web frontend's colour tokens (frontend/src/app/globals.css): brand
-/// indigo, gain green, loss red and hold orange for signals. Widgets read them
-/// through `context.palette` so the dark variant stays consistent.
+/// "Quiet Ledger" — the same tokens as frontend/src/app/globals.css: ink on
+/// white, one indigo accent, and colour spent only on meaning (gain green,
+/// loss red, hold amber). Widgets read them through `context.palette`.
 @immutable
 class AppPalette extends ThemeExtension<AppPalette> {
   const AppPalette({
@@ -12,6 +12,8 @@ class AppPalette extends ThemeExtension<AppPalette> {
     required this.surfaceMuted,
     required this.border,
     required this.mutedForeground,
+    required this.ink,
+    required this.inkForeground,
     required this.brand,
     required this.brandSoft,
     required this.brandForeground,
@@ -29,6 +31,11 @@ class AppPalette extends ThemeExtension<AppPalette> {
   final Color surfaceMuted;
   final Color border;
   final Color mutedForeground;
+
+  /// Primary buttons, selected chips and tabs: near-black in light mode,
+  /// near-white in dark mode.
+  final Color ink;
+  final Color inkForeground;
   final Color brand;
   final Color brandSoft;
   final Color brandForeground;
@@ -41,38 +48,42 @@ class AppPalette extends ThemeExtension<AppPalette> {
 
   static const light = AppPalette(
     background: Color(0xFFFFFFFF),
-    foreground: Color(0xFF131722),
+    foreground: Color(0xFF101418),
     surface: Color(0xFFFFFFFF),
-    surfaceMuted: Color(0xFFF1F3F9),
-    border: Color(0xFFE3E6EF),
-    mutedForeground: Color(0xFF6B7080),
-    brand: Color(0xFF4F46E5),
-    brandSoft: Color(0xFFEEF0FF),
+    surfaceMuted: Color(0xFFF4F4F1),
+    border: Color(0xFFE8E8E4),
+    mutedForeground: Color(0xFF5A616B),
+    ink: Color(0xFF101418),
+    inkForeground: Color(0xFFFFFFFF),
+    brand: Color(0xFF4338CA),
+    brandSoft: Color(0xFFEEEDFB),
     brandForeground: Color(0xFFFFFFFF),
-    gain: Color(0xFF089981),
-    gainSoft: Color(0xFFE6F5F2),
-    loss: Color(0xFFF23645),
-    lossSoft: Color(0xFFFDECEE),
-    hold: Color(0xFFE38A00),
-    holdSoft: Color(0xFFFFF4E0),
+    gain: Color(0xFF0B7A4B),
+    gainSoft: Color(0xFFE7F4ED),
+    loss: Color(0xFFC0362C),
+    lossSoft: Color(0xFFFBEBE9),
+    hold: Color(0xFFA34B07),
+    holdSoft: Color(0xFFFBF1E6),
   );
 
   static const dark = AppPalette(
-    background: Color(0xFF0F1117),
-    foreground: Color(0xFFE6E8EF),
-    surface: Color(0xFF171A23),
-    surfaceMuted: Color(0xFF1F2330),
-    border: Color(0xFF2A2F3D),
-    mutedForeground: Color(0xFF9096A8),
-    brand: Color(0xFF6D66F2),
-    brandSoft: Color(0xFF23244A),
-    brandForeground: Color(0xFFFFFFFF),
-    gain: Color(0xFF22AB94),
-    gainSoft: Color(0xFF10302B),
-    loss: Color(0xFFF7525F),
-    lossSoft: Color(0xFF3A1A1F),
-    hold: Color(0xFFF0A030),
-    holdSoft: Color(0xFF3A2A10),
+    background: Color(0xFF0B0D10),
+    foreground: Color(0xFFECEDEF),
+    surface: Color(0xFF121519),
+    surfaceMuted: Color(0xFF1A1E24),
+    border: Color(0xFF262B33),
+    mutedForeground: Color(0xFF9AA1AC),
+    ink: Color(0xFFECEDEF),
+    inkForeground: Color(0xFF0B0D10),
+    brand: Color(0xFF8F89F3),
+    brandSoft: Color(0xFF23224A),
+    brandForeground: Color(0xFF0B0D10),
+    gain: Color(0xFF3DBE85),
+    gainSoft: Color(0xFF10291D),
+    loss: Color(0xFFF0705F),
+    lossSoft: Color(0xFF34171A),
+    hold: Color(0xFFE59A45),
+    holdSoft: Color(0xFF33230F),
   );
 
   /// Green / red / muted for a signed change.
@@ -95,6 +106,8 @@ class AppPalette extends ThemeExtension<AppPalette> {
       surfaceMuted: mix(surfaceMuted, other.surfaceMuted),
       border: mix(border, other.border),
       mutedForeground: mix(mutedForeground, other.mutedForeground),
+      ink: mix(ink, other.ink),
+      inkForeground: mix(inkForeground, other.inkForeground),
       brand: mix(brand, other.brand),
       brandSoft: mix(brandSoft, other.brandSoft),
       brandForeground: mix(brandForeground, other.brandForeground),
@@ -112,6 +125,19 @@ extension PaletteContext on BuildContext {
   AppPalette get palette => Theme.of(this).extension<AppPalette>()!;
 }
 
+/// The small upper-case section label ("YOUR STRATEGY", "PREFERENCES").
+/// Logo colours (see widgets/brand_mark.dart).
+const brandMint = Color(0xFF4EE478);
+const brandForest = Color(0xFF114325);
+
+TextStyle labelCaps(AppPalette p) =>
+    TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.3, color: p.mutedForeground);
+
+/// Prices: large Lato Light with tabular figures.
+const priceFeatures = [FontFeature.tabularFigures()];
+
+const fontFamily = 'Lato';
+
 ThemeData buildLightTheme() => _buildTheme(AppPalette.light, Brightness.light);
 
 ThemeData buildDarkTheme() => _buildTheme(AppPalette.dark, Brightness.dark);
@@ -120,8 +146,9 @@ ThemeData _buildTheme(AppPalette p, Brightness brightness) {
   final scheme = ColorScheme.fromSeed(
     seedColor: p.brand,
     brightness: brightness,
-    primary: p.brand,
-    onPrimary: p.brandForeground,
+    primary: p.ink,
+    onPrimary: p.inkForeground,
+    secondary: p.brand,
     surface: p.surface,
     onSurface: p.foreground,
     onSurfaceVariant: p.mutedForeground,
@@ -129,14 +156,18 @@ ThemeData _buildTheme(AppPalette p, Brightness brightness) {
     outlineVariant: p.border,
     error: p.loss,
   );
-  final radius = BorderRadius.circular(10);
-  final buttonShape = RoundedRectangleBorder(borderRadius: radius);
-  const buttonPadding = EdgeInsets.symmetric(horizontal: 18, vertical: 14);
+  final radius = BorderRadius.circular(12);
+  const pill = StadiumBorder();
+  const buttonPadding = EdgeInsets.symmetric(horizontal: 22, vertical: 14);
+  const buttonText = TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w700);
+  final base = ThemeData(brightness: brightness, fontFamily: fontFamily).textTheme;
 
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    fontFamily: fontFamily,
     colorScheme: scheme,
+    textTheme: base.apply(bodyColor: p.foreground, displayColor: p.foreground),
     scaffoldBackgroundColor: p.background,
     canvasColor: p.background,
     dividerColor: p.border,
@@ -148,7 +179,7 @@ ThemeData _buildTheme(AppPalette p, Brightness brightness) {
       scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
       centerTitle: false,
-      titleTextStyle: TextStyle(color: p.foreground, fontSize: 20, fontWeight: FontWeight.w600),
+      titleTextStyle: TextStyle(fontFamily: fontFamily, color: p.foreground, fontSize: 20, fontWeight: FontWeight.w700),
     ),
     cardTheme: CardThemeData(
       color: p.surface,
@@ -161,59 +192,68 @@ ThemeData _buildTheme(AppPalette p, Brightness brightness) {
       filled: true,
       fillColor: p.surface,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: p.border)),
       enabledBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: p.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: p.brand, width: 1.5)),
+      focusedBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: p.foreground, width: 1.5)),
     ),
     filledButtonTheme: FilledButtonThemeData(
+      // Main buttons wear the logo: mint tile, forest S.
       style: FilledButton.styleFrom(
-        backgroundColor: p.brand,
-        foregroundColor: p.brandForeground,
+        backgroundColor: brandMint,
+        foregroundColor: brandForest,
+        disabledBackgroundColor: brandMint.withValues(alpha: 0.35),
+        disabledForegroundColor: brandForest.withValues(alpha: 0.6),
+        overlayColor: brandForest,
+        minimumSize: const Size(64, 52),
         padding: buttonPadding,
-        shape: buttonShape,
-        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        shape: pill,
+        textStyle: buttonText,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: p.foreground,
+        backgroundColor: p.surfaceMuted,
+        minimumSize: const Size(64, 52),
         padding: buttonPadding,
-        shape: buttonShape,
-        side: BorderSide(color: p.border),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        shape: pill,
+        side: BorderSide.none,
+        textStyle: buttonText,
       ),
     ),
-    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: p.brand)),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: p.brand,
+        textStyle: const TextStyle(fontFamily: fontFamily, fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+    ),
     chipTheme: ChipThemeData(
-      backgroundColor: p.surface,
-      selectedColor: p.brandSoft,
-      side: BorderSide(color: p.border),
-      shape: const StadiumBorder(),
-      labelStyle: TextStyle(color: p.foreground, fontSize: 13),
+      backgroundColor: p.surfaceMuted,
+      selectedColor: p.ink,
+      side: BorderSide.none,
+      shape: pill,
+      showCheckmark: false,
+      labelStyle: TextStyle(fontFamily: fontFamily, color: p.foreground, fontSize: 13, fontWeight: FontWeight.w700),
+      secondaryLabelStyle: TextStyle(fontFamily: fontFamily, color: p.inkForeground, fontSize: 13, fontWeight: FontWeight.w700),
     ),
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: p.surface,
-      indicatorColor: p.brandSoft,
-      surfaceTintColor: Colors.transparent,
-      iconTheme: WidgetStateProperty.resolveWith(
-        (states) => IconThemeData(color: states.contains(WidgetState.selected) ? p.brand : p.mutedForeground),
-      ),
-      labelTextStyle: WidgetStateProperty.resolveWith(
-        (states) => TextStyle(
-          fontSize: 12,
-          fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
-          color: states.contains(WidgetState.selected) ? p.brand : p.mutedForeground,
-        ),
-      ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.all(Colors.white),
+      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? p.ink : p.border),
+      trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
     ),
     tabBarTheme: TabBarThemeData(
-      labelColor: p.brand,
+      labelColor: p.foreground,
       unselectedLabelColor: p.mutedForeground,
-      indicatorColor: p.brand,
+      indicatorColor: p.foreground,
       dividerColor: p.border,
-      labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      labelStyle: const TextStyle(fontFamily: fontFamily, fontWeight: FontWeight.w700),
     ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: p.ink,
+      contentTextStyle: TextStyle(fontFamily: fontFamily, color: p.inkForeground, fontSize: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
   );
 }

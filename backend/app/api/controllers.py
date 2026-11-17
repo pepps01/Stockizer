@@ -7,6 +7,7 @@ from app.api.base import Controller
 from app.contracts.repositories import ICatalogRepository
 from app.contracts.services import (
     IAccountService,
+    IAdminService,
     IAdviserService,
     IArtifactStore,
     IAuthService,
@@ -76,6 +77,8 @@ class MarketsController(Controller):
         self.route("/search", self.search)
         self.route("/symbols/<path:symbol>/history", self.history)
         self.route("/symbols/<path:symbol>/signal", self.signal)
+        self.route("/symbols/<path:symbol>/members", self.index_members)
+        self.route("/symbols/<path:symbol>/financials", self.index_financials, limit="30 per minute")
         self.route("/symbols/<path:symbol>", self.symbol)
 
     def health(self):
@@ -105,6 +108,12 @@ class MarketsController(Controller):
 
     def symbol(self, symbol):
         return self.ok(self._board.symbol_detail(symbol))
+
+    def index_members(self, symbol):
+        return self.ok(self._board.index_members(symbol))
+
+    def index_financials(self, symbol):
+        return self.ok(self._board.index_financials(symbol))
 
     def history(self, symbol):
         return self.ok(self._board.history(symbol, self.params.arg("range") or "1Y"))
@@ -141,6 +150,7 @@ class SelectorController(Controller):
             period_end=self.params.date(data.get("period_end"), "period_end", end),
             metric=data.get("metric") or "sharpe",
             top_n=self.params.int(data.get("top_n"), "top_n", 10),
+            stock_type=data.get("stock_type") or "equity",
         )
         return self.ok(run=run.to_dict(), code=201)
 
@@ -182,6 +192,7 @@ class OptimizerController(Controller):
             training_end=self.params.date(data.get("training_end"), "training_end"),
             objective=data.get("objective") or "sharpe",
             bounds=data.get("bounds"),
+            strategy=data.get("strategy") or "algebraic",
         )
         return self.ok(runs=[r.to_dict() for r in runs], code=201)
 
@@ -273,6 +284,11 @@ class AccountController(Controller):
         self.route("/watchlist/<path:symbol>", self.remove_from_watchlist, methods=["DELETE"], auth=True)
         self.route("/actions", self.record_action, methods=["POST"], auth=True)
         self.route("/actions", self.actions, auth=True)
+        self.route("/assumptions", self.assumptions, auth=True)
+        self.route("/assumptions/<path:symbol>", self.set_assumption, methods=["PUT"], auth=True, limit="60 per minute")
+        self.route("/assumptions/<path:symbol>", self.clear_assumption, methods=["DELETE"], auth=True)
+        self.route("/devices", self.register_device, methods=["POST"], auth=True, limit="30 per minute")
+        self.route("/devices", self.unregister_device, methods=["DELETE"], auth=True)
 
     def watchlist(self):
         return self.ok(items=self._account.watchlist(self.user_id()))
@@ -290,3 +306,74 @@ class AccountController(Controller):
 
     def actions(self):
         return self.ok(actions=self._account.actions(self.user_id()))
+
+    def assumptions(self):
+        return self.ok(assumptions=self._account.assumptions(self.user_id()))
+
+    def set_assumption(self, symbol):
+        return self.ok(assumption=self._account.set_assumption(self.user_id(), symbol, self.params.json().get("stance") or ""))
+
+    def clear_assumption(self, symbol):
+        self._account.clear_assumption(self.user_id(), symbol)
+        return "", 204
+
+    def register_device(self):
+        data = self.params.json()
+        self._account.register_device(self.user_id(), data.get("token") or "", data.get("platform") or "android")
+        return "", 204
+
+    def unregister_device(self):
+        self._account.unregister_device(self.user_id(), self.params.json().get("token") or "")
+        return "", 204
+
+
+class AdminController(Controller):
+    """Web admin area. Every route requires an active admin account."""
+
+    name, url_prefix = "admin", "/api/admin"
+
+    def __init__(self, admin: IAdminService):
+        self._admin = admin
+        super().__init__()
+
+    def register_routes(self) -> None:
+        self.route("/overview", self.overview, admin=True)
+        self.route("/users", self.users, admin=True)
+        self.route("/users/<user_id>", self.update_user, methods=["PATCH"], admin=True, limit="60 per minute")
+        self.route("/sessions", self.sessions, admin=True)
+        self.route("/sessions/<session_id>", self.update_session, methods=["PATCH"], admin=True, limit="60 per minute")
+        self.route("/exchanges", self.exchanges, admin=True)
+        self.route("/exchanges/<code>/tickers", self.tickers, admin=True)
+        self.route("/tickers/<path:symbol>", self.update_ticker, methods=["PATCH"], admin=True, limit="120 per minute")
+        self.route("/audit", self.audit, admin=True)
+
+    def overview(self):
+        return self.ok(self._admin.overview())
+
+    def users(self):
+        return self.ok(self._admin.list_users(
+            query=self.params.arg("q"),
+            page=self.params.int(self.params.arg("page"), "page", 1, low=1),
+            page_size=self.params.int(self.params.arg("page_size"), "page_size", 25, low=1, high=100),
+        ))
+
+    def update_user(self, user_id):
+        return self.ok(user=self._admin.update_user(self.user_id(), user_id, self.params.json()))
+
+    def sessions(self):
+        return self.ok(sessions=self._admin.list_sessions(status=self.params.arg("status") or None))
+
+    def update_session(self, session_id):
+        return self.ok(session=self._admin.set_session_status(self.user_id(), session_id, self.params.json().get("status") or ""))
+
+    def exchanges(self):
+        return self.ok(exchanges=self._admin.exchanges())
+
+    def tickers(self, code):
+        return self.ok(tickers=self._admin.tickers(code))
+
+    def update_ticker(self, symbol):
+        return self.ok(ticker=self._admin.set_ticker_active(self.user_id(), symbol, self.params.json().get("active")))
+
+    def audit(self):
+        return self.ok(actions=self._admin.audit_log(self.params.int(self.params.arg("limit"), "limit", 100, low=1, high=500)))

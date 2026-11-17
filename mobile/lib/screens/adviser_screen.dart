@@ -19,6 +19,7 @@ import '../widgets/signal_tile.dart';
 import 'search_screen.dart';
 import 'strategy_screen.dart';
 import 'ticker_detail_screen.dart' show monitorIntervals;
+import '../widgets/motion.dart';
 
 /// Stage 3 (frontend /adviser): monitored tickers and the live signal feed —
 /// green BUY, red SELL, orange HOLD, pushed over the socket. Never trades.
@@ -69,7 +70,9 @@ class _AdviserScreenState extends State<AdviserScreen> with AutomaticKeepAliveCl
     super.dispose();
   }
 
-  void _reloadSessions() => setState(() => _sessions = _api.sessions(_token));
+  void _reloadSessions() => setState(() {
+    _sessions = _api.sessions(_token);
+  });
 
   Future<void> _act(AdviserSession session, String action) async {
     try {
@@ -98,7 +101,7 @@ class _AdviserScreenState extends State<AdviserScreen> with AutomaticKeepAliveCl
         await _sessions.then<void>((_) {}, onError: (_) {});
       },
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         children: [
           Text(
             'Monitors your tickers at the interval you choose and emits colour-coded decision signals — green BUY, red SELL, orange HOLD — pushed to you in real time. It never places trades.',
@@ -114,12 +117,14 @@ class _AdviserScreenState extends State<AdviserScreen> with AutomaticKeepAliveCl
               builder: (context, state, _) => Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(color: state == RealtimeState.open ? p.gain : p.hold, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 6),
+                  state == RealtimeState.open
+                      ? PulseDot(color: p.gain, size: 7)
+                      : Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(color: p.hold, shape: BoxShape.circle),
+                        ),
+                  const SizedBox(width: 4),
                   Text(state == RealtimeState.open ? 'Live' : 'Reconnecting…', style: TextStyle(fontSize: 12, color: p.mutedForeground)),
                 ],
               ),
@@ -161,11 +166,20 @@ class _AdviserScreenState extends State<AdviserScreen> with AutomaticKeepAliveCl
                 final feed = [..._pushed, ...(snapshot.data ?? const <SignalEvent>[]).where((s) => !ids.contains(s.id))].take(100).toList();
                 if (snapshot.hasError && feed.isEmpty) return ErrorNote(errorMessage(snapshot.error));
                 if (feed.isEmpty) {
-                  return Text('Signals appear here the moment the Adviser emits them.', style: TextStyle(color: p.mutedForeground, fontSize: 13));
+                  return Text(
+                    'Signals appear here the moment the Adviser emits them.',
+                    style: TextStyle(color: p.mutedForeground, fontSize: 13),
+                  );
                 }
                 return Column(
                   children: [
-                    for (var i = 0; i < feed.length; i++) ...[if (i > 0) const Divider(), SignalEventTile(signal: feed[i])],
+                    for (var i = 0; i < feed.length; i++) ...[
+                      if (i > 0) const Divider(),
+                      FadeSlideIn(
+                        key: ValueKey(feed[i].id),
+                        child: SignalEventTile(signal: feed[i]),
+                      ),
+                    ],
                   ],
                 );
               },
@@ -213,10 +227,15 @@ class _SessionTile extends StatelessWidget {
                         children: [
                           InkWell(
                             onTap: () => openSymbol(context, s.ticker.symbol),
-                            child: Text(s.ticker.displaySymbol, style: TextStyle(fontWeight: FontWeight.w700, color: p.brand)),
+                            child: Text(
+                              s.ticker.displaySymbol,
+                              style: TextStyle(fontWeight: FontWeight.w700, color: p.brand),
+                            ),
                           ),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(s.ticker.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: detail)),
+                          Expanded(
+                            child: Text(s.ticker.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: detail),
+                          ),
                           SourceBadge(source: s.ticker.dataSource),
                           const SizedBox(width: 6),
                           SignalBadge(type: s.lastSignalType, size: BadgeSize.sm),
@@ -233,7 +252,10 @@ class _SessionTile extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
                           ),
                           if (quote != null) ChangeText(quote!.changePercent, style: const TextStyle(fontSize: 12)),
-                          Text('confidence ${s.lastConfidence != null ? '${(s.lastConfidence! * 100).toStringAsFixed(0)}%' : '—'}', style: detail),
+                          Text(
+                            'confidence ${s.lastConfidence != null ? '${(s.lastConfidence! * 100).toStringAsFixed(0)}%' : '—'}',
+                            style: detail,
+                          ),
                           Text('every ${formatInterval(s.intervalSec)}', style: detail),
                           Text(s.parameters != null ? 'optimised params' : 'default params', style: detail),
                           Text('checked ${formatDateTime(s.lastEvaluatedAt)}', style: detail),
@@ -241,7 +263,11 @@ class _SessionTile extends StatelessWidget {
                       ),
                       Row(
                         children: [
-                          TextButton.icon(onPressed: () => onAction('evaluate'), icon: const Icon(Icons.refresh, size: 16), label: const Text('Check now')),
+                          TextButton.icon(
+                            onPressed: () => onAction('evaluate'),
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Check now'),
+                          ),
                           TextButton.icon(
                             onPressed: () => onAction(s.isActive ? 'paused' : 'active'),
                             icon: Icon(s.isActive ? Icons.pause : Icons.play_arrow, size: 16),
@@ -316,17 +342,18 @@ class _NewSessionState extends State<_NewSession> {
     });
     try {
       await context.read<ApiClient>().createSession(
-            context.read<AuthProvider>().token!,
-            symbol: ticker.symbol,
-            intervalSec: _interval,
-            optimizerRunId: _runId,
-          );
+        context.read<AuthProvider>().token!,
+        symbol: ticker.symbol,
+        intervalSec: _interval,
+        optimizerRunId: _runId,
+      );
       if (!mounted) return;
       setState(() {
         _ticker = null;
         _runs = null;
         _runId = null;
       });
+      Haptics.alert();
       widget.onCreated();
       showSnack(context, 'Monitoring ${ticker.displaySymbol} every ${formatInterval(_interval)}.');
     } catch (e) {
@@ -348,7 +375,10 @@ class _NewSessionState extends State<_NewSession> {
           LabeledField(
             label: 'Exchange & ticker',
             child: OutlinedButton(
-              style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14)),
+              style: OutlinedButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              ),
               onPressed: _chooseTicker,
               child: Row(
                 children: [
@@ -356,7 +386,10 @@ class _NewSessionState extends State<_NewSession> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ticker == null
-                        ? Text('e.g. Dangote, SHOP, 005930', style: TextStyle(color: p.mutedForeground, fontWeight: FontWeight.w400))
+                        ? Text(
+                            'e.g. Dangote, SHOP, 005930',
+                            style: TextStyle(color: p.mutedForeground, fontWeight: FontWeight.w400),
+                          )
                         : Text('${ticker.displaySymbol} · ${ticker.name} · ${ticker.exchange}', overflow: TextOverflow.ellipsis),
                   ),
                 ],
@@ -386,7 +419,10 @@ class _NewSessionState extends State<_NewSession> {
                   items: [
                     const DropdownMenuItem<String?>(value: null, child: Text('Latest optimised / default')),
                     for (final r in runs)
-                      DropdownMenuItem<String?>(value: r.id, child: Text('${r.objective} ${r.trainingStart}→${r.trainingEnd}', overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem<String?>(
+                        value: r.id,
+                        child: Text('${r.objective} ${r.trainingStart}→${r.trainingEnd}', overflow: TextOverflow.ellipsis),
+                      ),
                   ],
                   onChanged: ticker == null ? null : (v) => setState(() => _runId = v),
                 );

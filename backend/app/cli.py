@@ -64,10 +64,12 @@ class CatalogSeeder:
 
     @staticmethod
     def _upsert_ticker(symbol: str, **fields) -> None:
-        ticker = Ticker.query.filter_by(symbol=symbol).first() or Ticker(symbol=symbol)
+        ticker = Ticker.query.filter_by(symbol=symbol).first()
+        if ticker is None:
+            # New listings start active; existing ones keep whatever an admin set.
+            ticker = Ticker(symbol=symbol, active=True)
         for name, value in fields.items():
             setattr(ticker, name, value)
-        ticker.active = True
         db.session.add(ticker)
 
 
@@ -100,6 +102,18 @@ def register_cli(app: Flask, container) -> None:
         if demo_user:
             created = DemoUserFactory(container.users, container.uow).ensure()
             click.echo(f"{'Created' if created else 'Existing'} demo user: {DemoUserFactory.EMAIL} / {DemoUserFactory.PASSWORD}")
+
+    @app.cli.command("make-admin")
+    @click.argument("email")
+    @click.option("--revoke", is_flag=True, help="Remove admin rights instead of granting them.")
+    def make_admin(email: str, revoke: bool):
+        """Grant (or revoke) access to the web admin area."""
+        user = container.users.get_by_email(email)
+        if user is None:
+            raise click.ClickException(f"No account with email {email}")
+        container.users.update(user.id, is_admin=not revoke)
+        container.uow.commit()
+        click.echo(f"{user.email} is {'no longer' if revoke else 'now'} an admin.")
 
     @app.cli.command("adviser-worker")
     def adviser_worker():

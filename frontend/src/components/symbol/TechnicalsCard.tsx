@@ -18,15 +18,15 @@ export function TechnicalsCard({ technicals }: { technicals: Technicals }) {
   return (
     <Card title="Technicals">
       <Gauge value={technicals.summary} />
-      <div className="mt-2 text-center text-lg font-semibold">
+      <div className="mt-2 text-center text-lg font-bold">
         <RatingLabel label={technicals.label} />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-xl bg-surface-muted p-3 text-center">
+      <div className="mt-5 grid grid-cols-2 gap-4 border-y border-border py-3 text-sm">
+        <div className="text-center">
           <div className="text-xs text-muted-foreground">Moving averages</div>
           <RatingLabel label={technicals.ma_label} />
         </div>
-        <div className="rounded-xl bg-surface-muted p-3 text-center">
+        <div className="text-center">
           <div className="text-xs text-muted-foreground">Oscillators</div>
           <RatingLabel label={technicals.osc_label} />
         </div>

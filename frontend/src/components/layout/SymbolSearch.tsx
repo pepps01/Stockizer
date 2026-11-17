@@ -53,7 +53,7 @@ export function SymbolSearch() {
   };
 
   return (
-    <div ref={box} className="relative w-full max-w-xs">
+    <div ref={box} className="relative w-full">
       <input
         className="input rounded-full bg-surface-muted pl-9"
         placeholder="Search symbol or company (Ctrl+K)"
@@ -71,12 +71,12 @@ export function SymbolSearch() {
         }}
         aria-label="Search symbols"
       />
-      <svg className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
       {open && visible.length > 0 && (
-        <ul className="absolute left-0 right-0 top-11 z-50 max-h-96 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-xl sm:w-[26rem]">
+        <ul className="absolute left-0 right-0 top-12 z-50 max-h-96 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-xl sm:w-[26rem]">
           {visible.map((t, i) => (
             <li key={t.symbol}>
               <button

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/shell_controller.dart';
+import '../theme.dart';
 import 'adviser_screen.dart';
 import 'optimizer_screen.dart';
 import 'selector_screen.dart';
@@ -44,13 +45,25 @@ class _StrategyScreenState extends State<StrategyScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Strategy'),
+        title: const Text('Strategy', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+        toolbarHeight: 64,
         bottom: TabBar(
           controller: _tabs,
-          tabs: const [
-            Tab(icon: Icon(Icons.filter_alt_outlined, size: 20), text: '1 · Selector'),
-            Tab(icon: Icon(Icons.tune, size: 20), text: '2 · Optimizer'),
-            Tab(icon: Icon(Icons.notifications_active_outlined, size: 20), text: '3 · Adviser'),
+          indicatorSize: TabBarIndicatorSize.label,
+          indicatorWeight: 2,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+          tabs: [
+            for (final (n, label) in const [('01', 'Selector'), ('02', 'Optimizer'), ('03', 'Adviser')])
+              Tab(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: '$n  ', style: const TextStyle(fontWeight: FontWeight.w300, fontFeatures: priceFeatures)),
+                      TextSpan(text: label),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),

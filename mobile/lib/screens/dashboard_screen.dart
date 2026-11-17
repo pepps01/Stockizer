@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../format.dart';
 import '../models/market.dart';
 import '../models/strategy.dart';
 import '../navigation.dart';
 import '../services/api_client.dart';
 import '../state/auth_provider.dart';
+import '../state/settings_controller.dart';
 import '../state/shell_controller.dart';
 import '../theme.dart';
+import '../widgets/badges.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/common.dart';
-import '../widgets/flag.dart';
+import '../widgets/live_quotes.dart';
 import '../widgets/market_widgets.dart';
-import '../widgets/signal_tile.dart';
+import '../widgets/motion.dart';
 
-/// Home: headline indices, the Selector → Optimizer → Adviser pipeline, the
-/// user's latest signals, then markets → exchanges → tickers to explore.
+/// Home (approved minimalist design): the headline index with an edge-to-edge
+/// line, two more markets, the latest signals, the Adviser's state and the
+/// watchlist. Everything else lives on its own tab.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -25,11 +29,11 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   late Future<List<MarketRow>> _indices;
-  late Future<List<Country>> _countries;
-  late Future<List<Exchange>> _exchanges;
-  late Future<Movers> _movers;
   late Future<List<SignalEvent>> _signals;
   late Future<List<MarketRow>> _watchlist;
+  late Future<List<AdviserSession>> _sessions;
+  Future<List<Bar>>? _headlineBars;
+  String? _headlineSymbol;
 
   @override
   void initState() {
@@ -41,170 +45,200 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final api = context.read<ApiClient>();
     final token = context.read<AuthProvider>().token!;
     _indices = api.indices();
-    _countries = api.countries();
-    _exchanges = api.exchanges();
-    _movers = api.movers(limit: 5);
     _signals = api.signals(token);
     _watchlist = api.watchlist(token);
+    _sessions = api.sessions(token);
+    _headlineBars = null;
+    _headlineSymbol = null;
+  }
+
+  Future<List<Bar>> _barsFor(String symbol) {
+    if (_headlineSymbol != symbol || _headlineBars == null) {
+      _headlineSymbol = symbol;
+      _headlineBars = context.read<ApiClient>().history(symbol, '1M');
+    }
+    return _headlineBars!;
   }
 
   Future<void> _refresh() async {
+    Haptics.tap();
     setState(_load);
-    await Future.wait<Object>([_indices, _exchanges, _movers]).then<void>((_) {}, onError: (_) {});
+    await _indices.then<void>((_) {}, onError: (_) {});
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final user = context.watch<AuthProvider>().user;
+    final shell = context.read<ShellController>();
+    final settings = context.watch<SettingsController>();
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
+            padding: const EdgeInsets.only(bottom: 120),
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                padding: const EdgeInsets.fromLTRB(22, 14, 16, 0),
                 child: Row(
                   children: [
-                    const BrandMark(size: 40),
+                    const BrandMark(size: 32),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${_greeting()}, ${user?.firstName ?? ''}'.trim(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                          Text('Evalucre Capital · algebraic adviser', style: TextStyle(fontSize: 12.5, color: p.brand, fontWeight: FontWeight.w500)),
-                        ],
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: '${_greeting()}, '),
+                            TextSpan(
+                              text: user?.firstName ?? '',
+                              style: TextStyle(fontWeight: FontWeight.w700, color: p.foreground),
+                            ),
+                          ],
+                        ),
+                        style: TextStyle(fontSize: 14, color: p.mutedForeground),
                       ),
                     ),
-                    IconButton(tooltip: 'Search', onPressed: () => openSearch(context), icon: const Icon(Icons.search)),
+                    _RoundButton(icon: Icons.search, tooltip: 'Search', onTap: () => openSearch(context)),
                   ],
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                child: _SearchBarButton(onTap: () => openSearch(context)),
               ),
               AsyncView<List<MarketRow>>(
                 future: _indices,
                 onRetry: () => setState(_load),
-                loading: SizedBox(
-                  height: 104,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: 4,
-                    separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (_, _) => const Skeleton(width: 170, height: 104, radius: 16),
-                  ),
-                ),
-                builder: (context, rows) => IndexStrip(rows: rows.take(10).toList()),
+                loading: const Padding(padding: EdgeInsets.fromLTRB(22, 24, 22, 0), child: Skeleton(height: 200)),
+                builder: (context, rows) {
+                  if (rows.isEmpty) return const SizedBox.shrink();
+                  final headline = rows.first;
+                  final others = [
+                    if (rows.length > 1) rows[1],
+                    ...rows.where((r) => r.info.countryCode != headline.info.countryCode).take(1),
+                  ];
+                  return LiveQuotes(
+                    symbols: [headline.symbol, ...others.map((r) => r.symbol)],
+                    builder: (context, live) => _Headline(
+                      row: headline,
+                      quote: live[headline.symbol] ?? headline.quote,
+                      bars: _barsFor(headline.symbol),
+                      others: [for (final r in others) (r, live[r.symbol] ?? r.quote)],
+                    ),
+                  );
+                },
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+                child: Row(
                   children: [
-                    const SectionHeader('Strategy pipeline', subtitle: 'Rank → tune → monitor. Tap a stage to start.'),
-                    const _PipelineCards(),
-                    FutureBuilder<List<SignalEvent>>(
-                      future: _signals,
-                      builder: (context, snapshot) {
-                        final signals = snapshot.data ?? const [];
-                        if (signals.isEmpty) return const SizedBox.shrink();
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SectionHeader(
-                              'Latest signals',
-                              action: TextButton(
-                                onPressed: () => openStrategy(context, const StrategyIntent.adviser()),
-                                child: const Text('Adviser →'),
-                              ),
-                            ),
-                            SectionCard(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                              child: Column(
-                                children: [
-                                  for (var i = 0; i < signals.length && i < 3; i++) ...[
-                                    if (i > 0) const Divider(),
-                                    SignalEventTile(signal: signals[i]),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    SectionHeader(
-                      'Markets',
-                      subtitle: 'Pick a country to see its indices, movers and exchanges.',
-                      action: TextButton(onPressed: () => context.read<ShellController>().select(ShellTab.markets), child: const Text('World →')),
-                    ),
+                    Expanded(child: Text('LATEST SIGNALS', style: labelCaps(p))),
+                    TextButton(onPressed: () => shell.select(ShellTab.signals), child: const Text('All')),
                   ],
                 ),
               ),
-              AsyncView<List<Country>>(
-                future: _countries,
-                onRetry: () => setState(_load),
-                loading: const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Skeleton(height: 44)),
-                builder: (context, countries) => _CountryStrip(countries: countries),
+              FutureBuilder<List<SignalEvent>>(
+                future: _signals,
+                builder: (context, snapshot) {
+                  final signals = snapshot.data ?? const <SignalEvent>[];
+                  if (!snapshot.hasData) return const Padding(padding: EdgeInsets.symmetric(horizontal: 22), child: Skeleton(height: 120));
+                  if (signals.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 22),
+                      child: Text(
+                        'No signals yet. Monitor a stock and the Adviser’s calls appear here.',
+                        style: TextStyle(fontSize: 13, color: p.mutedForeground),
+                      ),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
+                    child: Column(children: [for (final s in signals.take(3)) _SignalRow(signal: s)]),
+                  );
+                },
               ),
+              FutureBuilder<List<AdviserSession>>(
+                future: _sessions,
+                builder: (context, snapshot) {
+                  final live = snapshot.data?.where((s) => s.status == 'active').length ?? 0;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                    child: Material(
+                      color: p.surfaceMuted,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => openStrategy(context, live > 0 ? const StrategyIntent.adviser() : const StrategyIntent.selector()),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(color: live > 0 ? p.gain : p.border, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: live > 0
+                                        ? [
+                                            const TextSpan(
+                                              text: 'Adviser is live ',
+                                              style: TextStyle(fontWeight: FontWeight.w700),
+                                            ),
+                                            TextSpan(
+                                              text: 'on $live ticker${live == 1 ? '' : 's'}',
+                                              style: TextStyle(color: p.mutedForeground),
+                                            ),
+                                          ]
+                                        : [
+                                            const TextSpan(
+                                              text: 'Build your strategy ',
+                                              style: TextStyle(fontWeight: FontWeight.w700),
+                                            ),
+                                            TextSpan(
+                                              text: 'select · optimize · advise',
+                                              style: TextStyle(color: p.mutedForeground),
+                                            ),
+                                          ],
+                                  ),
+                                  style: const TextStyle(fontSize: 13.5),
+                                ),
+                              ),
+                              Text(live > 0 ? 'Strategy →' : 'Start →', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (settings.showWatchlistOnHome)
+                FutureBuilder<List<MarketRow>>(
+                  future: _watchlist,
+                  builder: (context, snapshot) {
+                    final rows = snapshot.data ?? const <MarketRow>[];
+                    if (rows.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 26, 22, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('WATCHLIST', style: labelCaps(p)),
+                          const SizedBox(height: 4),
+                          MarketList(rows: settings.sortWatchlist(rows).take(6).toList(), showViewSwitch: false),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SectionHeader(
-                      'Exchanges',
-                      subtitle: 'Open markets first. Tap one to browse its listed tickers.',
-                      action: TextButton(onPressed: () => context.read<ShellController>().select(ShellTab.markets), child: const Text('All →')),
-                    ),
-                    AsyncView<List<Exchange>>(
-                      future: _exchanges,
-                      onRetry: () => setState(_load),
-                      builder: (context, exchanges) {
-                        final sorted = [...exchanges]..sort((a, b) => (b.isOpen ? 1 : 0) - (a.isOpen ? 1 : 0));
-                        return Column(
-                          children: [
-                            for (final e in sorted.take(5)) Padding(padding: const EdgeInsets.only(bottom: 8), child: ExchangeTile(exchange: e)),
-                          ],
-                        );
-                      },
-                    ),
-                    const SectionHeader('Today’s movers', subtitle: 'Across every covered exchange.'),
-                    AsyncView<Movers>(
-                      future: _movers,
-                      onRetry: () => setState(_load),
-                      builder: (context, movers) => MoversBoard(movers: movers, compact: true),
-                    ),
-                    FutureBuilder<List<MarketRow>>(
-                      future: _watchlist,
-                      builder: (context, snapshot) {
-                        final rows = snapshot.data ?? const [];
-                        if (rows.isEmpty) return const SizedBox.shrink();
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader('Your watchlist'),
-                            SectionCard(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              child: MarketList(rows: rows, showViewSwitch: false),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    const Notice(
-                      'Key principle: the Adviser never executes trades — it emits signals, which you can act on through your own broker.',
-                      icon: Icons.shield_outlined,
-                    ),
-                  ],
+                padding: const EdgeInsets.fromLTRB(22, 28, 22, 0),
+                child: Text(
+                  'Stockiser recommends; it never places trades. You act through your own broker.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: p.mutedForeground),
                 ),
               ),
             ],
@@ -222,101 +256,140 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class _SearchBarButton extends StatelessWidget {
-  const _SearchBarButton({required this.onTap});
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({required this.icon, required this.tooltip, required this.onTap});
 
+  final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return Material(
-      color: p.surfaceMuted,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          child: Row(
-            children: [
-              Icon(Icons.search, color: p.mutedForeground, size: 20),
-              const SizedBox(width: 10),
-              Text('Search tickers, e.g. Dangote, SHOP, 005930', style: TextStyle(color: p.mutedForeground)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    onPressed: onTap,
+    style: IconButton.styleFrom(backgroundColor: context.palette.surfaceMuted, fixedSize: const Size(44, 44)),
+    icon: Icon(icon, size: 20),
+  );
 }
 
-class _PipelineCards extends StatelessWidget {
-  const _PipelineCards();
+/// The headline index: label, large light price, change, a month's line drawn
+/// edge to edge, then two more markets in a hairline strip. Tap to open.
+class _Headline extends StatelessWidget {
+  const _Headline({required this.row, required this.quote, required this.bars, required this.others});
+
+  final MarketRow row;
+  final Quote? quote;
+  final Future<List<Bar>> bars;
+  final List<(MarketRow, Quote?)> others;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final modules = [
-      (
-        'Selector',
-        'Rank an exchange’s stocks over a period and keep the top N.',
-        Icons.filter_alt_outlined,
-        p.brand,
-        p.brandSoft,
-        const StrategyIntent.selector(),
-      ),
-      (
-        'Optimizer',
-        'Tune the signal on a training period; test it out-of-sample.',
-        Icons.tune,
-        p.hold,
-        p.holdSoft,
-        const StrategyIntent.optimizer(),
-      ),
-      (
-        'Adviser',
-        'Monitor tickers and get BUY / SELL / HOLD in real time.',
-        Icons.notifications_active_outlined,
-        p.gain,
-        p.gainSoft,
-        const StrategyIntent.adviser(),
-      ),
-    ];
+    final change = quote?.changePercent;
+    final tone = (change ?? 0) < 0 ? p.loss : p.gain;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < modules.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => openStrategy(context, modules[i].$6),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
+        InkWell(
+          onTap: () => openSymbol(context, row.symbol),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(row.info.name.toUpperCase(), style: labelCaps(p)),
+                    const SizedBox(width: 8),
+                    SourceBadge(source: row.info.dataSource),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                TickingPrice(
+                  value: quote?.price,
+                  style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w300, height: 1.1, fontFeatures: priceFeatures),
+                ),
+                Text.rich(
+                  TextSpan(
                     children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(color: modules[i].$5, borderRadius: BorderRadius.circular(14)),
-                        child: Icon(modules[i].$3, color: modules[i].$4),
+                      TextSpan(
+                        text: '${formatSigned(quote?.change)} (${formatPercent(change)})',
+                        style: TextStyle(color: tone, fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${i + 1} · ${modules[i].$1}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 2),
-                            Text(modules[i].$2, style: TextStyle(fontSize: 13, color: p.mutedForeground)),
-                          ],
-                        ),
+                      TextSpan(
+                        text: '  today',
+                        style: TextStyle(color: p.mutedForeground),
                       ),
-                      Icon(Icons.chevron_right, color: p.mutedForeground),
                     ],
                   ),
+                  style: const TextStyle(fontSize: 14),
                 ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        FutureBuilder<List<Bar>>(
+          future: bars,
+          builder: (context, snapshot) => SizedBox(
+            height: 92,
+            width: double.infinity,
+            child: snapshot.hasData && snapshot.data!.length > 1
+                ? CustomPaint(painter: _Sparkline(snapshot.data!.map((b) => b.close).toList(), tone))
+                : null,
+          ),
+        ),
+        if (others.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.fromLTRB(22, 6, 22, 0),
+            decoration: BoxDecoration(
+              border: Border.symmetric(horizontal: BorderSide(color: p.border)),
+            ),
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  for (var i = 0; i < others.length; i++) ...[
+                    if (i > 0) VerticalDivider(width: 1, color: p.border),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => openSymbol(context, others[i].$1.symbol),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(i == 0 ? 0 : 14, 12, 8, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                others[i].$1.info.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p.mutedForeground),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      formatNumber(others[i].$2?.price),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w300, fontFeatures: priceFeatures),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  ChangeText(
+                                    others[i].$2?.changePercent,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -325,32 +398,94 @@ class _PipelineCards extends StatelessWidget {
   }
 }
 
-class _CountryStrip extends StatelessWidget {
-  const _CountryStrip({required this.countries});
+/// A month of closes as a thin line over a soft fade, full width.
+class _Sparkline extends CustomPainter {
+  _Sparkline(this.values, this.color);
 
-  final List<Country> countries;
+  final List<double> values;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lo = values.reduce((a, b) => a < b ? a : b);
+    final hi = values.reduce((a, b) => a > b ? a : b);
+    final span = (hi - lo) == 0 ? 1 : hi - lo;
+    Offset at(int i) => Offset(size.width * i / (values.length - 1), 8 + (size.height - 16) * (1 - (values[i] - lo) / span));
+    final line = Path()..moveTo(at(0).dx, at(0).dy);
+    for (var i = 1; i < values.length; i++) {
+      line.lineTo(at(i).dx, at(i).dy);
+    }
+    final fill = Path.from(line)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      fill,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withValues(alpha: 0.14), color.withValues(alpha: 0)],
+        ).createShader(Offset.zero & size),
+    );
+    canvas.drawPath(
+      line,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _Sparkline old) => old.values != values || old.color != color;
+}
+
+/// One signal: symbol over name and time, the call as a soft pill, confidence.
+class _SignalRow extends StatelessWidget {
+  const _SignalRow({required this.signal});
+
+  final SignalEvent signal;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: countries.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final c = countries[i];
-          return ActionChip(
-            avatar: Text(Flag.emoji(c.code)),
-            label: Text.rich(TextSpan(children: [
-              TextSpan(text: c.name),
-              TextSpan(text: '  ${c.exchangeCount}', style: TextStyle(color: p.mutedForeground, fontSize: 12)),
-            ])),
-            onPressed: () => openCountry(context, c.code),
-          );
-        },
+    final time = parseApiTime(signal.emittedAt);
+    return InkWell(
+      onTap: () => openSymbol(context, signal.symbol),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: p.border)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(signal.displaySymbol, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text(
+                    '${signal.name}${time == null ? '' : ' · ${formatClock(time.toLocal())}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: p.mutedForeground),
+                  ),
+                ],
+              ),
+            ),
+            SignalBadge(type: signal.signalType, size: BadgeSize.sm),
+            SizedBox(
+              width: 42,
+              child: Text(
+                '${(signal.confidence * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 12, color: p.mutedForeground),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

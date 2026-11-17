@@ -77,3 +77,48 @@ def test_health_payload_field_named_status_is_not_the_http_status(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.get_json() == {"status": "ok"}
+
+
+def test_index_members_are_the_stocks_of_its_market(client):
+    body = client.get("/api/symbols/NGXASI.NGX.IDX/members").get_json()
+    assert body["index"]["kind"] == "index" and body["countries"] == ["NG"]
+    assert body["stocks"] and {s["kind"] for s in body["stocks"]} == {"stock"}
+    assert {s["country_code"] for s in body["stocks"]} == {"NG"}
+    assert "technicals" in body["stocks"][0] and "quote" in body["stocks"][0]
+
+
+def test_index_financials_split_into_growth_value_and_equity(client):
+    body = client.get("/api/symbols/NGXASI.NGX.IDX/financials").get_json()
+    segments = {s["key"]: s for s in body["segments"]}
+    assert list(segments) == ["growth", "value", "equity"]
+    for seg in segments.values():
+        assert seg["label"] and seg["definition"] and seg["traits"]
+    growth = {s["symbol"] for s in segments["growth"]["stocks"]}
+    value = {s["symbol"] for s in segments["value"]["stocks"]}
+    equity = {s["symbol"] for s in segments["equity"]["stocks"]}
+    assert growth and value and not growth & value
+    assert growth | value <= equity
+    assert all(s["style"] == "growth" for s in segments["growth"]["stocks"])
+    assert "pe_ratio" in segments["equity"]["stocks"][0]["fundamentals"]
+
+
+def test_only_indices_have_members(client):
+    assert client.get("/api/symbols/MTNN.NGX/members").status_code == 400
+    assert client.get("/api/symbols/NOPE/financials").status_code == 404
+
+
+def test_assumptions_are_saved_replaced_and_cleared(client, auth_headers):
+    assert client.put("/api/assumptions/MTNN.NGX", json={"stance": "buy"}).status_code == 401
+    assert client.put("/api/assumptions/MTNN.NGX", headers=auth_headers, json={"stance": "moon"}).status_code == 400
+
+    first = client.put("/api/assumptions/MTNN.NGX", headers=auth_headers, json={"stance": "buy"}).get_json()["assumption"]
+    assert first["stance"] == "buy" and first["price"] and first["symbol"] == "MTNN.NGX"
+    client.put("/api/assumptions/DANGCEM.NGX", headers=auth_headers, json={"stance": "hold"})
+    client.put("/api/assumptions/MTNN.NGX", headers=auth_headers, json={"stance": "sell"})
+
+    listed = client.get("/api/assumptions", headers=auth_headers).get_json()["assumptions"]
+    assert {(a["symbol"], a["stance"]) for a in listed} == {("MTNN.NGX", "sell"), ("DANGCEM.NGX", "hold")}
+    assert all("change_since_percent" in a and "quote" in a for a in listed)
+
+    assert client.delete("/api/assumptions/MTNN.NGX", headers=auth_headers).status_code == 204
+    assert [a["symbol"] for a in client.get("/api/assumptions", headers=auth_headers).get_json()["assumptions"]] == ["DANGCEM.NGX"]

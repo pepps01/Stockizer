@@ -23,6 +23,8 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+    # Firebase service-account JSON for push notifications; push is off when unset.
+    FCM_SERVICE_ACCOUNT_FILE = os.environ.get("FCM_SERVICE_ACCOUNT_FILE")
     EMAIL_FROM = os.environ.get("EMAIL_FROM", "no-reply@algizer.app")
     EMAIL_VERIFICATION_SALT = "email-verification"
     EMAIL_VERIFICATION_MAX_AGE_SECONDS = 60 * 60 * 24  # 24h

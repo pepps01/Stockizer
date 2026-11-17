@@ -1,7 +1,9 @@
+import time
 from datetime import date
 
 import pandas as pd
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError
 
 from app.contracts.market_data import BAR_COLUMNS, empty_bars
 from app.contracts.repositories import IBarRepository
@@ -13,6 +15,9 @@ from app.models.base import utcnow
 class SqlAlchemyBarRepository(IBarRepository):
     """Daily OHLCV cache in the market_data table. Upserts commit immediately:
     the cache is independent of any business transaction."""
+
+    DEADLOCK_RETRIES = 3
+    RETRYABLE_MYSQL_ERRORS = {1213, 1205}  # deadlock found; lock wait timeout
 
     def coverage(self, ticker_ids: list[str]) -> dict[str, tuple[date, date]]:
         if not ticker_ids:
@@ -59,8 +64,20 @@ class SqlAlchemyBarRepository(IBarRepository):
                 index_elements=["ticker_id", "ts"],
                 set_={c: stmt.excluded[c] for c in ("open", "high", "low", "close", "volume", "source", "fetched_at")},
             )
-        db.session.execute(stmt, rows)
-        db.session.commit()
+        # The cache warmer and page requests can top up the same ticker at once;
+        # MySQL may then pick one upsert as a deadlock victim. The upsert is
+        # idempotent, so roll back and try again.
+        for attempt in range(self.DEADLOCK_RETRIES + 1):
+            try:
+                db.session.execute(stmt, rows)
+                db.session.commit()
+                return
+            except OperationalError as exc:
+                db.session.rollback()
+                code = exc.orig.args[0] if exc.orig is not None and exc.orig.args else None
+                if code not in self.RETRYABLE_MYSQL_ERRORS or attempt == self.DEADLOCK_RETRIES:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
     def read(self, ticker_ids: list[str], start: date, end: date) -> dict[str, pd.DataFrame]:
         if not ticker_ids:

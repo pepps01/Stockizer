@@ -65,6 +65,9 @@ String formatDateTime(String? iso) {
   return time == null ? '—' : DateFormat('MMM d, HH:mm').format(time);
 }
 
+/// "10:42" in local time.
+String formatClock(DateTime time) => DateFormat('HH:mm').format(time);
+
 String formatInterval(int seconds) {
   if (seconds % 3600 == 0) return '${seconds ~/ 3600}h';
   if (seconds % 60 == 0) return '${seconds ~/ 60}m';

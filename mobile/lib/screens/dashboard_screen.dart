@@ -131,7 +131,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Row(
                   children: [
                     Expanded(child: Text('LATEST SIGNALS', style: labelCaps(p))),
-                    TextButton(onPressed: () => shell.select(ShellTab.signals), child: const Text('All')),
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: p.foreground),
+                      onPressed: () => shell.select(ShellTab.signals),
+                      child: const Text('All →'),
+                    ),
                   ],
                 ),
               ),

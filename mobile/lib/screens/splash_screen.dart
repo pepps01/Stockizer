@@ -29,7 +29,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       backgroundColor: AppPalette.light.ink,
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            const SizedBox(width: double.infinity),
             const Spacer(flex: 3),
             ScaleTransition(scale: _scale, child: const BrandMark(size: 96, inverted: true)),
             const SizedBox(height: 24),

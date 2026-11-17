@@ -7,7 +7,7 @@ import { api, ApiError } from "@/lib/api";
 export function RegisterForm() {
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<null | "verify" | "ready">(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -15,14 +15,28 @@ export function RegisterForm() {
     setError(null);
     setSubmitting(true);
     try {
-      await api.register(form);
-      setSuccess(true);
+      const { user } = await api.register(form);
+      setSuccess(user.is_verified ? "ready" : "verify");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (success === "ready") {
+    return (
+      <div className="panel p-8 text-center">
+        <h2 className="text-lg font-semibold">Your account is ready</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <Link href="/login" className="font-bold text-foreground underline underline-offset-4">
+            Log in
+          </Link>{" "}
+          with <span className="font-medium">{form.email}</span> to get started.
+        </p>
+      </div>
+    );
+  }
 
   if (success) {
     return (

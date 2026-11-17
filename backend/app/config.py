@@ -35,6 +35,14 @@ class Config:
 
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+    # Without an email service, verification links can't reach anyone. Set to 0
+    # on a test deployment to verify new accounts at sign-up instead.
+    REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "1") == "1"
+
+    # First admin, created (or promoted) at start-up when both are set.
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+
     # Browser origins allowed to call the REST API and open the /ws socket.
     # Comma-separated env var overrides the default, which covers the Next.js
     # dev server and a locally-served Flutter web build (native Android/iOS/

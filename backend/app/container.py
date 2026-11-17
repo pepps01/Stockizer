@@ -153,6 +153,7 @@ def build_container(config) -> Container:
             secret_key=config["SECRET_KEY"],
             salt=config["EMAIL_VERIFICATION_SALT"],
             max_age_seconds=config["EMAIL_VERIFICATION_MAX_AGE_SECONDS"],
+            require_verification=config["REQUIRE_EMAIL_VERIFICATION"],
         ),
         selector=selector,
         optimizer=OptimizerService(

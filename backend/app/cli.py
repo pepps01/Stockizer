@@ -115,6 +115,23 @@ def register_cli(app: Flask, container) -> None:
         container.uow.commit()
         click.echo(f"{user.email} is {'no longer' if revoke else 'now'} an admin.")
 
+    @app.cli.command("ensure-admin")
+    def ensure_admin():
+        """Creates (or promotes) the admin named by ADMIN_EMAIL / ADMIN_PASSWORD."""
+        email, password = app.config.get("ADMIN_EMAIL"), app.config.get("ADMIN_PASSWORD")
+        if not email or not password:
+            click.echo("ADMIN_EMAIL / ADMIN_PASSWORD not set; skipping.")
+            return
+        user = container.users.get_by_email(email)
+        if user is None:
+            user = container.users.create(
+                first_name="Stockiser", last_name="Admin", email=email,
+                password_hash=generate_password_hash(password), is_verified=True,
+            )
+        user.is_admin, user.is_active, user.is_verified = True, True, True
+        container.uow.commit()
+        click.echo(f"Admin ready: {email}")
+
     @app.cli.command("fetch-logos")
     @click.option("--refresh", is_flag=True, help="Look up every Yahoo stock again, not only those without a website.")
     def fetch_logos(refresh: bool):

@@ -42,13 +42,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
     final email = _email.text.trim();
     try {
-      await context.read<ApiClient>().register(
-            firstName: _firstName.text.trim(),
-            lastName: _lastName.text.trim(),
-            email: email,
-            password: _password.text,
-          );
+      final user = await context.read<ApiClient>().register(
+        firstName: _firstName.text.trim(),
+        lastName: _lastName.text.trim(),
+        email: email,
+        password: _password.text,
+      );
       if (!mounted) return;
+      if (user.isVerified) {
+        // No email step on this server: back to login with the email filled in.
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Your account is ready. Log in to get started.')));
+        Navigator.of(context).pop(email);
+        return;
+      }
       // Replace signup with "check your inbox"; the login page gets the email back.
       Navigator.of(context).pushReplacement(VerifyEmailScreen.route(email: email), result: email);
     } on ApiException catch (e) {

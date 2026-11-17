@@ -8,7 +8,7 @@ from app.contracts.repositories import ICatalogRepository, IAdminRepository, IUn
 from app.contracts.services import IAdminService, IPushService
 from app.domain.errors import ConflictError, NotFoundError, ValidationError
 from app.models import AdminAction
-from app.models.base import utcnow
+from app.models.base import iso, utcnow
 from app.models.pipeline import SESSION_STATUSES
 
 
@@ -57,11 +57,20 @@ class AdminService(IAdminService):
         users, total = self._admin.list_users(query, (page - 1) * page_size, page_size)
         activity = self._admin.user_activity([u.id for u in users])
         return {
-            "users": [{**u.to_dict(), "activity": activity[u.id]} for u in users],
+            "users": [{**u.to_dict(), "activity": activity[u.id], "access": self._access_summary(u)} for u in users],
             "total": total,
             "page": page,
             "page_size": page_size,
         }
+
+    @staticmethod
+    def _access_summary(user) -> dict:
+        return {"signup_ip": user.signup_ip, "last_ip": user.last_ip, "last_seen_at": iso(user.last_seen_at)}
+
+    def user_access(self, user_id: str, limit: int = 20) -> list[dict]:
+        if self._users.get_by_id(user_id) is None:
+            raise NotFoundError("User not found")
+        return [entry.to_dict() for entry in self._users.recent_access(user_id, max(1, min(limit, 50)))]
 
     def update_user(self, admin_id: str, user_id: str, changes: dict) -> dict:
         user = self._users.get_by_id(user_id)

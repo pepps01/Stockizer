@@ -8,6 +8,7 @@ import '../state/shell_controller.dart';
 import '../state/ticker_marks.dart';
 import '../theme.dart';
 import 'motion.dart';
+import 'ticker_logo.dart';
 
 /// The per-ticker call chip (web: AssumeMenu). It shows the assumed call, a
 /// star when watched, or "Assume"; tapping it opens [showStockActions].
@@ -20,6 +21,7 @@ class TickerMenu extends StatelessWidget {
     required this.marks,
     this.name,
     this.quote,
+    this.logoUrl,
     this.dots = false,
   });
 
@@ -28,6 +30,7 @@ class TickerMenu extends StatelessWidget {
   final TickerMarks marks;
   final String? name;
   final Quote? quote;
+  final String? logoUrl;
   final bool dots;
 
   static (String, Color, Color) styleOf(AppPalette p, String stance) => switch (stance) {
@@ -37,7 +40,7 @@ class TickerMenu extends StatelessWidget {
   };
 
   void _open(BuildContext context) =>
-      showStockActions(context, symbol: symbol, displaySymbol: displaySymbol, name: name, quote: quote, marks: marks);
+      showStockActions(context, symbol: symbol, displaySymbol: displaySymbol, name: name, quote: quote, logoUrl: logoUrl, marks: marks);
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +100,7 @@ Future<void> showStockActions(
   required TickerMarks marks,
   String? name,
   Quote? quote,
+  String? logoUrl,
 }) {
   Haptics.tick();
   return showModalBottomSheet<void>(
@@ -106,7 +110,15 @@ Future<void> showStockActions(
     showDragHandle: true,
     backgroundColor: context.palette.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-    builder: (sheet) => _StockActions(symbol: symbol, displaySymbol: displaySymbol, name: name, quote: quote, marks: marks, outer: context),
+    builder: (sheet) => _StockActions(
+      symbol: symbol,
+      displaySymbol: displaySymbol,
+      name: name,
+      quote: quote,
+      logoUrl: logoUrl,
+      marks: marks,
+      outer: context,
+    ),
   );
 }
 
@@ -116,6 +128,7 @@ class _StockActions extends StatelessWidget {
     required this.displaySymbol,
     required this.name,
     required this.quote,
+    required this.logoUrl,
     required this.marks,
     required this.outer,
   });
@@ -124,6 +137,7 @@ class _StockActions extends StatelessWidget {
   final String displaySymbol;
   final String? name;
   final Quote? quote;
+  final String? logoUrl;
   final TickerMarks marks;
   final BuildContext outer;
 
@@ -151,7 +165,7 @@ class _StockActions extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    SymbolAvatar(displaySymbol, size: 46),
+                    TickerLogo(symbol: displaySymbol, logoUrl: logoUrl, size: 46),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -334,30 +348,6 @@ class _ActionRow extends StatelessWidget {
             Icon(Icons.chevron_right_rounded, color: p.mutedForeground),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// A round monogram for a ticker: the first letters of its symbol.
-class SymbolAvatar extends StatelessWidget {
-  const SymbolAvatar(this.symbol, {super.key, this.size = 40});
-
-  final String symbol;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final letters = symbol.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(color: p.surfaceMuted, shape: BoxShape.circle),
-      child: Text(
-        letters.substring(0, letters.length < 2 ? letters.length : 2).toUpperCase(),
-        style: TextStyle(fontSize: size * 0.32, fontWeight: FontWeight.w900, color: p.foreground),
       ),
     );
   }

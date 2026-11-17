@@ -4,6 +4,7 @@ from app.models.base import iso, new_uuid, utcnow
 RISK_PROFILES = ("conservative", "moderate", "aggressive")
 ALERT_CHANNELS = ("in_app", "email", "push")
 DEVICE_PLATFORMS = ("android", "ios", "web")
+ACCESS_EVENTS = ("register", "login", "resume")
 USER_ACTIONS = ("hold", "buy", "sell", "view")
 STANCES = ("buy", "hold", "sell")
 
@@ -25,6 +26,10 @@ class User(db.Model):
     alert_channels = db.Column(db.JSON, nullable=False, default=lambda: ["in_app"])
     default_exchange_id = db.Column(db.String(36), db.ForeignKey("exchanges.id"))
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    # Where the account was opened and last used from (an IPv6 address fits in 45).
+    signup_ip = db.Column(db.String(45))
+    last_ip = db.Column(db.String(45))
+    last_seen_at = db.Column(db.DateTime)
 
     default_exchange = db.relationship("Exchange")
 
@@ -141,4 +146,29 @@ class Assumption(db.Model):
             "price": float(self.price) if self.price is not None else None,
             "created_at": iso(self.created_at),
             "updated_at": iso(self.updated_at),
+        }
+
+
+class UserAccess(db.Model):
+    """One sign-up, sign-in or app launch on a saved session: when, from which
+    IP and on which platform. Only the newest entries per user are kept."""
+
+    __tablename__ = "user_access"
+
+    id = db.Column(db.String(36), primary_key=True, default=new_uuid)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=False, index=True)
+    event = db.Column(db.Enum(*ACCESS_EVENTS, name="access_event"), nullable=False)
+    ip = db.Column(db.String(45))
+    platform = db.Column(db.String(16), nullable=False, default="other")
+    user_agent = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "event": self.event,
+            "ip": self.ip,
+            "platform": self.platform,
+            "user_agent": self.user_agent,
+            "created_at": iso(self.created_at),
         }

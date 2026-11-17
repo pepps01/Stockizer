@@ -192,6 +192,7 @@ class Signal(db.Model):
             "display_symbol": ticker.display_symbol,
             "name": ticker.company_name,
             "currency": ticker.currency,
+            "logo_url": ticker.logo_url,
             "signal_type": self.signal_type,
             "confidence": num(self.confidence),
             "price": num(self.price),
@@ -237,4 +238,5 @@ def ticker_brief(ticker) -> dict:
         "exchange": ticker.exchange.code,
         "currency": ticker.currency,
         "data_source": ticker.data_source,
+        "logo_url": ticker.logo_url,
     }

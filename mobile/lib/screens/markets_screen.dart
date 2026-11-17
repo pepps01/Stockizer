@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/flag.dart';
 import '../widgets/market_widgets.dart';
+import '../widgets/paged_list.dart';
 
 /// World or single-country market page: indices, movers and every covered
 /// exchange (frontend /markets?country=…). Used as the Markets tab and as a
@@ -42,9 +43,9 @@ class _MarketsScreenState extends State<MarketsScreen> {
   }
 
   void _setCountry(String? code) => setState(() {
-        _country = code;
-        _load();
-      });
+    _country = code;
+    _load();
+  });
 
   Future<void> _pickCountry(List<Country> countries) async {
     final picked = await showModalBottomSheet<_CountryPick>(
@@ -103,8 +104,18 @@ class _MarketsScreenState extends State<MarketsScreen> {
                   future: _indices,
                   onRetry: () => setState(_load),
                   builder: (context, rows) => rows.isEmpty
-                      ? const SectionCard(child: EmptyState(title: 'No index tracked for this country yet', icon: Icons.show_chart))
-                      : SectionCard(child: MarketList(rows: rows, showCountry: _country == null)),
+                      ? const SectionCard(
+                          child: EmptyState(title: 'No index tracked for this country yet', icon: Icons.show_chart),
+                        )
+                      : SectionCard(
+                          // Keyed by country so picking another country starts on page 1.
+                          child: PagedList<MarketRow>(
+                            key: ValueKey(_country),
+                            items: rows,
+                            noun: 'indices',
+                            builder: (context, page) => MarketList(rows: page, showCountry: _country == null),
+                          ),
+                        ),
                 ),
                 const SectionHeader('Movers'),
                 AsyncView<Movers>(
@@ -116,9 +127,8 @@ class _MarketsScreenState extends State<MarketsScreen> {
                 AsyncView<List<Exchange>>(
                   future: _exchanges,
                   onRetry: () => setState(_load),
-                  builder: (context, exchanges) => Column(
-                    children: [for (final e in exchanges) Padding(padding: const EdgeInsets.only(bottom: 8), child: ExchangeTile(exchange: e))],
-                  ),
+                  // Keyed by country so picking another country starts on page 1.
+                  builder: (context, exchanges) => PagedExchanges(key: ValueKey(_country), exchanges: exchanges),
                 ),
               ],
             ),
@@ -183,6 +193,35 @@ class _CountrySheetState extends State<_CountrySheet> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The exchanges six at a time.
+class PagedExchanges extends StatelessWidget {
+  const PagedExchanges({super.key, required this.exchanges});
+
+  final List<Exchange> exchanges;
+
+  @override
+  Widget build(BuildContext context) {
+    if (exchanges.isEmpty) {
+      return const SectionCard(
+        child: EmptyState(title: 'No exchange covered here yet', icon: Icons.account_balance),
+      );
+    }
+    return PagedList<Exchange>(
+      items: exchanges,
+      noun: 'exchanges',
+      builder: (context, page) => Column(
+        children: [
+          for (final e in page)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ExchangeTile(exchange: e),
+            ),
         ],
       ),
     );

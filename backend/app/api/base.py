@@ -12,6 +12,7 @@ from flask_jwt_extended import get_current_user, get_jwt_identity, jwt_required,
 from werkzeug.exceptions import HTTPException
 
 from app.contracts.repositories import IUnitOfWork
+from app.domain.client import ClientInfo
 from app.domain.errors import DomainError, ForbiddenError, ValidationError
 from app.extensions import limiter
 
@@ -111,6 +112,17 @@ class Controller(ABC):
         return get_jwt_identity()
 
     @staticmethod
+    def client() -> ClientInfo:
+        """The caller's IP, user agent and platform. Behind a proxy the IP is
+        right only when TRUSTED_PROXY_HOPS is set (ProxyFix reads X-Forwarded-For)."""
+        agent = (request.user_agent.string or "")[:255] or None
+        return ClientInfo(
+            ip=(request.remote_addr or "")[:45] or None,
+            user_agent=agent,
+            platform=ClientInfo.platform_from(request.headers.get("X-Client-Platform"), agent),
+        )
+
+    @staticmethod
     def optional_user_id() -> str | None:
         verify_jwt_in_request(optional=True)
         return get_jwt_identity()
@@ -147,7 +159,7 @@ class CorsPolicy:
     same allow-list via `is_allowed_origin`."""
 
     METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    ALLOW_HEADERS = ["Authorization", "Content-Type"]
+    ALLOW_HEADERS = ["Authorization", "Content-Type", "X-Client-Platform"]
     EXPOSE_HEADERS = ["Content-Disposition", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
     MAX_AGE_SECONDS = 600
 

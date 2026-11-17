@@ -86,6 +86,7 @@ class SignalEvent {
   final String displaySymbol;
   final String name;
   final String currency;
+  final String? logoUrl;
   final SignalType signalType;
   final double confidence;
   final double price;
@@ -100,6 +101,7 @@ class SignalEvent {
     required this.displaySymbol,
     required this.name,
     required this.currency,
+    this.logoUrl,
     required this.signalType,
     required this.confidence,
     required this.price,
@@ -115,6 +117,7 @@ class SignalEvent {
         displaySymbol: json['display_symbol'] as String? ?? json['symbol'] as String,
         name: json['name'] as String? ?? '',
         currency: json['currency'] as String? ?? '',
+        logoUrl: json['logo_url'] as String?,
         signalType: SignalType.parse(json['signal_type']) ?? SignalType.hold,
         confidence: toDouble(json['confidence']),
         price: toDouble(json['price']),

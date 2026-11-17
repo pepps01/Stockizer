@@ -12,9 +12,9 @@ import '../theme.dart';
 import 'badges.dart';
 import 'common.dart';
 import 'financials_sheet.dart';
-import 'flag.dart';
 import 'live_quotes.dart';
 import 'ticker_menu.dart';
+import 'ticker_logo.dart';
 
 /// On an index's page: the stocks Stockiser covers in its market, with highs,
 /// lows and volume, a menu per stock, and the "Get Financials" button.
@@ -116,6 +116,7 @@ class _IndexStocksState extends State<IndexStocks> {
                             displaySymbol: row.info.displaySymbol,
                             name: row.info.name,
                             countryCode: multiCountry ? row.info.countryCode : null,
+                            logoUrl: row.info.logoUrl,
                             rating: row.technicals.label,
                             quote: live[row.symbol] ?? row.quote,
                             marks: _marks,
@@ -164,6 +165,7 @@ class _StockLine extends StatelessWidget {
     required this.displaySymbol,
     required this.name,
     required this.countryCode,
+    required this.logoUrl,
     required this.rating,
     required this.quote,
     required this.marks,
@@ -173,6 +175,7 @@ class _StockLine extends StatelessWidget {
   final String displaySymbol;
   final String name;
   final String? countryCode;
+  final String? logoUrl;
   final String? rating;
   final Quote? quote;
   final TickerMarks marks;
@@ -194,7 +197,7 @@ class _StockLine extends StatelessWidget {
               onTap: () => openSymbol(context, symbol),
               child: Row(
                 children: [
-                  SymbolAvatar(displaySymbol, size: 40),
+                  TickerLogo(symbol: displaySymbol, logoUrl: logoUrl, countryCode: countryCode, size: 40),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -210,7 +213,6 @@ class _StockLine extends StatelessWidget {
                                 style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
                               ),
                             ),
-                            if (countryCode != null) ...[const SizedBox(width: 6), Flag(code: countryCode!, size: 14)],
                           ],
                         ),
                         Text(
@@ -251,7 +253,7 @@ class _StockLine extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          TickerMenu(symbol: symbol, displaySymbol: displaySymbol, name: name, quote: q, marks: marks),
+          TickerMenu(symbol: symbol, displaySymbol: displaySymbol, name: name, quote: q, logoUrl: logoUrl, marks: marks),
         ],
       ),
     );

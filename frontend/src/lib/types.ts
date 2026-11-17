@@ -330,6 +330,17 @@ export interface StrategyOption {
 
 export interface AdminUser extends User {
   activity: { selector_runs: number; optimizer_runs: number; active_sessions: number };
+  access: { signup_ip: string | null; last_ip: string | null; last_seen_at: string | null };
+}
+
+/** One sign-up, sign-in or app launch on a saved session, as admins see it. */
+export interface AdminAccessEntry {
+  id: string;
+  event: "register" | "login" | "resume";
+  ip: string | null;
+  platform: "web" | "android" | "ios" | "other";
+  user_agent: string | null;
+  created_at: string;
 }
 
 export interface AdminAuditEntry {

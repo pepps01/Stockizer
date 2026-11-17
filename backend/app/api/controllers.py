@@ -40,6 +40,7 @@ class AuthController(Controller):
             last_name=data.get("last_name") or "",
             email=data.get("email") or "",
             password=data.get("password") or "",
+            client=self.client(),
         )
         return self.ok(user=user, code=201)
 
@@ -48,10 +49,10 @@ class AuthController(Controller):
 
     def login(self):
         data = self.params.json()
-        return self.ok(self._auth.login(email=data.get("email") or "", password=data.get("password") or ""))
+        return self.ok(self._auth.login(email=data.get("email") or "", password=data.get("password") or "", client=self.client()))
 
     def me(self):
-        return self.ok(user=self._auth.get_profile(self.user_id()))
+        return self.ok(user=self._auth.get_profile(self.user_id(), client=self.client()))
 
     def update_me(self):
         return self.ok(user=self._auth.update_profile(self.user_id(), self.params.json()))
@@ -340,6 +341,7 @@ class AdminController(Controller):
         self.route("/overview", self.overview, admin=True)
         self.route("/users", self.users, admin=True)
         self.route("/users/<user_id>", self.update_user, methods=["PATCH"], admin=True, limit="60 per minute")
+        self.route("/users/<user_id>/access", self.user_access, admin=True)
         self.route("/sessions", self.sessions, admin=True)
         self.route("/sessions/<session_id>", self.update_session, methods=["PATCH"], admin=True, limit="60 per minute")
         self.route("/exchanges", self.exchanges, admin=True)
@@ -359,6 +361,9 @@ class AdminController(Controller):
 
     def update_user(self, user_id):
         return self.ok(user=self._admin.update_user(self.user_id(), user_id, self.params.json()))
+
+    def user_access(self, user_id):
+        return self.ok(access=self._admin.user_access(user_id))
 
     def sessions(self):
         return self.ok(sessions=self._admin.list_sessions(status=self.params.arg("status") or None))

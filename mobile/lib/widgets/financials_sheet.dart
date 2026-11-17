@@ -9,9 +9,9 @@ import '../state/ticker_marks.dart';
 import '../theme.dart';
 import 'badges.dart';
 import 'common.dart';
-import 'flag.dart';
 import 'motion.dart';
 import 'ticker_menu.dart';
+import 'ticker_logo.dart';
 
 /// Opens the Financials panel for an index: it slides in from the right over a
 /// dimmed screen (web: FinancialsDrawer) with Growth / Value / Equity accordions.
@@ -294,7 +294,13 @@ class _StockRow extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Flag(code: stock.info.countryCode, size: 18),
+                      TickerLogo(
+                        symbol: stock.info.displaySymbol,
+                        logoUrl: stock.info.logoUrl,
+                        countryCode: stock.info.countryCode,
+                        size: 22,
+                        badge: false,
+                      ),
                       const SizedBox(width: 8),
                       Text(stock.info.displaySymbol, style: const TextStyle(fontWeight: FontWeight.w700)),
                       const SizedBox(width: 6),
@@ -339,6 +345,7 @@ class _StockRow extends StatelessWidget {
             displaySymbol: stock.info.displaySymbol,
             name: stock.info.name,
             quote: q,
+            logoUrl: stock.info.logoUrl,
             marks: marks,
             dots: true,
           ),

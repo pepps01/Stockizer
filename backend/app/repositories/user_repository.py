@@ -2,7 +2,7 @@ from typing import Optional
 
 from app.contracts.repositories import IUserRepository
 from app.extensions import db
-from app.models import User
+from app.models import User, UserAccess
 
 
 class SqlAlchemyUserRepository(IUserRepository):
@@ -30,3 +30,19 @@ class SqlAlchemyUserRepository(IUserRepository):
         for name, value in fields.items():
             setattr(user, name, value)
         return user
+
+    def add_access(self, user_id: str, *, event: str, ip: str | None, platform: str, user_agent: str | None, keep: int) -> None:
+        db.session.add(UserAccess(user_id=user_id, event=event, ip=ip, platform=platform, user_agent=user_agent))
+        db.session.flush()
+        stale = (
+            UserAccess.query.with_entities(UserAccess.id)
+            .filter_by(user_id=user_id)
+            .order_by(UserAccess.created_at.desc(), UserAccess.id.desc())
+            .offset(keep)
+            .all()
+        )
+        if stale:
+            UserAccess.query.filter(UserAccess.id.in_([row.id for row in stale])).delete(synchronize_session=False)
+
+    def recent_access(self, user_id: str, limit: int = 20) -> list:
+        return UserAccess.query.filter_by(user_id=user_id).order_by(UserAccess.created_at.desc()).limit(limit).all()

@@ -1,10 +1,18 @@
 import type {
+  Assumption,
+  AdminAuditEntry,
+  AdminExchange,
+  AdminOverview,
+  AdminTicker,
+  AdminUser,
   AdviserSession,
   AdviserSignal,
   Bar,
   Country,
   DataSource,
   Exchange,
+  IndexFinancials,
+  IndexMembers,
   ExchangeListing,
   MarketRow,
   Movers,
@@ -12,10 +20,15 @@ import type {
   ParamOption,
   SelectorRun,
   SignalEvent,
-  SignalParams,
+  Stance,
+  StockType,
+  StockTypeOption,
+  StrategyKey,
+  StrategyOption,
   SymbolDetail,
   TickerInfo,
   User,
+  UserActionRecord,
   UserActionType,
 } from "./types";
 
@@ -32,7 +45,7 @@ export class ApiError extends Error {
 
 type RequestOptions = RequestInit & { token?: string | null };
 
-/** Thin typed client for the Algizer REST API. */
+/** Thin typed client for the Stockiser REST API. */
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
@@ -53,6 +66,10 @@ export class ApiClient {
 
   private post<T>(path: string, body: unknown, token?: string | null) {
     return this.request<T>(path, { method: "POST", body: JSON.stringify(body), token });
+  }
+
+  private patch<T>(path: string, body: unknown, token: string) {
+    return this.request<T>(path, { method: "PATCH", body: JSON.stringify(body), token });
   }
 
   // ---- auth ----
@@ -86,16 +103,27 @@ export class ApiClient {
   signal = (symbol: string, token?: string | null) =>
     this.request<{ signal: AdviserSignal; optimizer_run_id: string | null }>(`/api/symbols/${encodeURIComponent(symbol)}/signal`, { token });
 
+  indexMembers = (symbol: string) => this.request<IndexMembers>(`/api/symbols/${encodeURIComponent(symbol)}/members`);
+  indexFinancials = (symbol: string) => this.request<IndexFinancials>(`/api/symbols/${encodeURIComponent(symbol)}/financials`);
+
   // ---- selector ----
   selectorOptions = () =>
-    this.request<{ metrics: { value: string; label: string }[]; default_period: { start: string; end: string } }>("/api/selector/options");
-  runSelector = (token: string, data: { exchange: string; period_start: string; period_end: string; metric: string; top_n: number }) =>
+    this.request<{ metrics: { value: string; label: string }[]; stock_types: StockTypeOption[]; default_period: { start: string; end: string } }>(
+      "/api/selector/options",
+    );
+  runSelector = (
+    token: string,
+    data: { exchange: string; period_start: string; period_end: string; metric: string; top_n: number; stock_type: StockType },
+  ) =>
     this.post<{ run: SelectorRun }>("/api/selector/runs", data, token);
   selectorRuns = (token: string) => this.request<{ runs: SelectorRun[] }>("/api/selector/runs", { token });
   selectorRun = (token: string, id: string) => this.request<{ run: SelectorRun }>(`/api/selector/runs/${id}`, { token });
 
   // ---- optimizer ----
-  optimizerOptions = () => this.request<{ objectives: string[]; parameters: ParamOption[] }>("/api/optimizer/options");
+  optimizerOptions = () =>
+    this.request<{ objectives: string[]; strategies: StrategyOption[]; default_strategy: StrategyKey; parameters: ParamOption[] }>(
+      "/api/optimizer/options",
+    );
   runOptimizer = (
     token: string,
     data: {
@@ -105,7 +133,8 @@ export class ApiClient {
       training_start: string;
       training_end: string;
       objective: string;
-      bounds?: Partial<Record<keyof SignalParams, [number, number]>>;
+      strategy: StrategyKey;
+      bounds?: Record<string, [number, number]>;
     },
   ) => this.post<{ runs: OptimizerRun[] }>("/api/optimizer/runs", data, token);
   optimizerRuns = (token: string, symbol?: string) =>
@@ -129,6 +158,7 @@ export class ApiClient {
   removeFromWatchlist = (token: string, symbol: string) =>
     this.request<void>(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE", token });
   recordAction = (token: string, symbol: string, action: UserActionType) => this.post("/api/actions", { symbol, action }, token);
+  actions = (token: string) => this.request<{ actions: UserActionRecord[] }>("/api/actions", { token });
 
   /** Downloads a pipeline artifact (ticker file / params JSON) with the bearer token. */
   async downloadArtifact(token: string, artifactId: string, fallbackName: string): Promise<void> {
@@ -141,6 +171,33 @@ export class ApiClient {
     link.click();
     URL.revokeObjectURL(url);
   }
+
+  // ---- assumed positions (Investor profile) ----
+  assumptions = (token: string) => this.request<{ assumptions: Assumption[] }>("/api/assumptions", { token });
+  setAssumption = (token: string, symbol: string, stance: Stance) =>
+    this.request<{ assumption: Assumption }>(`/api/assumptions/${encodeURIComponent(symbol)}`, { method: "PUT", token, body: JSON.stringify({ stance }) });
+  clearAssumption = (token: string, symbol: string) =>
+    this.request<void>(`/api/assumptions/${encodeURIComponent(symbol)}`, { method: "DELETE", token });
+
+  // ---- admin (web only; every call needs an admin account) ----
+  adminOverview = (token: string) => this.request<AdminOverview>("/api/admin/overview", { token });
+  adminUsers = (token: string, q: string, page: number) =>
+    this.request<{ users: AdminUser[]; total: number; page: number; page_size: number }>(
+      `/api/admin/users?q=${encodeURIComponent(q)}&page=${page}&page_size=25`,
+      { token },
+    );
+  adminUpdateUser = (token: string, id: string, changes: Partial<Record<"is_admin" | "is_active" | "is_verified", boolean>>) =>
+    this.patch<{ user: User }>(`/api/admin/users/${id}`, changes, token);
+  adminSessions = (token: string, status: string) =>
+    this.request<{ sessions: (AdviserSession & { user_email: string })[] }>(`/api/admin/sessions${status ? `?status=${status}` : ""}`, { token });
+  adminSetSessionStatus = (token: string, id: string, status: "active" | "paused" | "stopped") =>
+    this.patch<{ session: AdviserSession }>(`/api/admin/sessions/${id}`, { status }, token);
+  adminExchanges = (token: string) => this.request<{ exchanges: AdminExchange[] }>("/api/admin/exchanges", { token });
+  adminTickers = (token: string, code: string) =>
+    this.request<{ tickers: AdminTicker[] }>(`/api/admin/exchanges/${encodeURIComponent(code)}/tickers`, { token });
+  adminSetTickerActive = (token: string, symbol: string, active: boolean) =>
+    this.patch<{ ticker: AdminTicker }>(`/api/admin/tickers/${encodeURIComponent(symbol)}`, { active }, token);
+  adminAudit = (token: string) => this.request<{ actions: AdminAuditEntry[] }>("/api/admin/audit?limit=200", { token });
 }
 
 export const api = new ApiClient(API_BASE_URL);

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
 import '../services/api_client.dart';
 import '../services/realtime_client.dart';
+import 'push_registrar.dart';
 
 /// Session state — mirrors frontend/src/lib/auth-context.tsx. The JWT is kept
 /// in SharedPreferences and handed to the realtime socket so the user's
@@ -11,10 +14,11 @@ import '../services/realtime_client.dart';
 class AuthProvider extends ChangeNotifier {
   static const _tokenKey = 'algizer_token';
 
-  AuthProvider(this._api, this._realtime);
+  AuthProvider(this._api, this._realtime, [this._push]);
 
   final ApiClient _api;
   final RealtimeClient _realtime;
+  final PushRegistrar? _push;
 
   User? user;
   String? token;
@@ -37,6 +41,7 @@ class AuthProvider extends ChangeNotifier {
     }
     _realtime.setToken(token);
     isRestoring = false;
+    _syncPush();
     notifyListeners();
   }
 
@@ -47,10 +52,13 @@ class AuthProvider extends ChangeNotifier {
     token = accessToken;
     user = loggedInUser;
     _realtime.setToken(token);
+    _syncPush();
     notifyListeners();
   }
 
   Future<void> logout() async {
+    final current = token;
+    if (current != null) await _push?.forget(current);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     token = null;
@@ -63,6 +71,12 @@ class AuthProvider extends ChangeNotifier {
     if (token == null) return;
     user = await _api.getMe(token!);
     notifyListeners();
+  }
+
+  /// Registers this phone for push when the user has push alerts switched on.
+  void _syncPush() {
+    final (t, u) = (token, user);
+    if (t != null && u != null) unawaited(_push?.sync(t, u));
   }
 
   void setUser(User updated) {

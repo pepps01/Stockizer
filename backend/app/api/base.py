@@ -3,15 +3,16 @@ error mapping and the CORS policy."""
 
 from abc import ABC, abstractmethod
 from datetime import date
+from functools import wraps
 from typing import Callable
 
 from flask import Blueprint, Flask, jsonify, request
 from flask_cors import CORS
-from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
+from flask_jwt_extended import get_current_user, get_jwt_identity, jwt_required, verify_jwt_in_request
 from werkzeug.exceptions import HTTPException
 
 from app.contracts.repositories import IUnitOfWork
-from app.domain.errors import DomainError, ValidationError
+from app.domain.errors import DomainError, ForbiddenError, ValidationError
 from app.extensions import limiter
 
 
@@ -69,15 +70,41 @@ class Controller(ABC):
     @abstractmethod
     def register_routes(self) -> None: ...
 
-    def route(self, rule: str, view: Callable, *, methods=("GET",), auth: bool = False, limit: str | None = None, exempt: bool = False) -> None:
+    def route(
+        self,
+        rule: str,
+        view: Callable,
+        *,
+        methods=("GET",),
+        auth: bool = False,
+        admin: bool = False,
+        limit: str | None = None,
+        exempt: bool = False,
+    ) -> None:
         func = view
         if limit:
             func = limiter.limit(limit)(func)
         if exempt:
             func = limiter.exempt(func)
-        if auth:
+        if admin:
+            func = self._admin_only(func)
+        if auth or admin:
             func = jwt_required()(func)
         self.blueprint.add_url_rule(rule, endpoint=view.__name__, view_func=func, methods=list(methods))
+
+    @staticmethod
+    def _admin_only(func: Callable) -> Callable:
+        """Admin rights are read from the database on every request (via the JWT
+        user loader), so revoking them takes effect immediately."""
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            user = get_current_user()
+            if user is None or not user.is_admin:
+                raise ForbiddenError("Admins only")
+            return func(*args, **kwargs)
+
+        return wrapper
 
     @staticmethod
     def user_id() -> str:

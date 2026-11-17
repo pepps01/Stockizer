@@ -31,7 +31,7 @@ export function useAsync<T>(load: () => Promise<T> | null, deps: DependencyList)
     const request = load() ?? Promise.resolve(null);
     request
       .then((data) => !cancelled && setSettled({ key, data, error: null }))
-      .catch((err) => !cancelled && setSettled((prev) => ({ key, data: prev.data, error: errorMessage(err, "Could not reach the Algizer API") })));
+      .catch((err) => !cancelled && setSettled((prev) => ({ key, data: prev.data, error: errorMessage(err, "Could not reach the Stockiser API") })));
     return () => {
       cancelled = true;
     };

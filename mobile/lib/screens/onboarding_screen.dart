@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/badges.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/flag.dart';
+import '../widgets/motion.dart';
 
 enum OnboardingExit { register, login }
 
@@ -28,22 +29,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _PageData(
       step: 'Selector',
       title: 'Rank the world’s markets',
-      body: '37 exchanges across 34 countries — from New York and London to Lagos, Nairobi and Riyadh. '
+      body:
+          '37 exchanges across 34 countries — from New York and London to Lagos, Nairobi and Riyadh. '
           'Rank an exchange’s stocks by Sharpe, return or momentum and keep the top N.',
       art: _SelectorArt(),
     ),
     _PageData(
       step: 'Optimizer',
       title: 'Tune the algebra, then prove it',
-      body: 'Algizer tunes five signal parameters on a training period, then tests them on the unseen period '
+      body:
+          'Stockiser tunes five signal parameters on a training period, then tests them on the unseen period '
           'that follows — always compared with simply buying and holding.',
       art: _OptimizerArt(),
     ),
     _PageData(
       step: 'Adviser',
       title: 'Live signals, your decision',
-      body: 'Monitor tickers at the interval you choose. Green BUY, red SELL, orange HOLD — pushed to you in real time. '
-          'Algizer never places trades; you act through your own broker.',
+      body:
+          'Monitor tickers at the interval you choose. Green BUY, red SELL, orange HOLD — pushed to you in real time. '
+          'Stockiser never places trades; you act through your own broker.',
       art: _AdviserArt(),
     ),
   ];
@@ -71,7 +75,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   const BrandMark(size: 30),
                   const SizedBox(width: 10),
-                  const Text('Algizer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Text('Stockiser', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   if (!_isLast)
                     TextButton(
@@ -86,7 +90,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: PageView.builder(
                 controller: _controller,
                 itemCount: _pages.length,
-                onPageChanged: (i) => setState(() => _page = i),
+                onPageChanged: (i) {
+                  Haptics.tick();
+                  setState(() => _page = i);
+                },
                 itemBuilder: (context, i) => _OnboardingPage(data: _pages[i], index: i),
               ),
             ),
@@ -97,9 +104,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 220),
                     margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: i == _page ? 22 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(color: i == _page ? p.brand : p.border, borderRadius: BorderRadius.circular(99)),
+                    width: i == _page ? 22 : 6,
+                    height: 4,
+                    decoration: BoxDecoration(color: i == _page ? p.ink : p.border, borderRadius: BorderRadius.circular(99)),
                   ),
               ],
             ),
@@ -114,7 +121,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         children: [
                           FilledButton(onPressed: () => widget.onDone(OnboardingExit.register), child: const Text('Create an account')),
                           const SizedBox(height: 10),
-                          OutlinedButton(onPressed: () => widget.onDone(OnboardingExit.login), child: const Text('I already have an account')),
+                          OutlinedButton(
+                            onPressed: () => widget.onDone(OnboardingExit.login),
+                            child: const Text('I already have an account'),
+                          ),
                         ],
                       )
                     : SizedBox(
@@ -161,23 +171,19 @@ class _OnboardingPage extends StatelessWidget {
               Container(
                 height: 260,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [p.brandSoft, p.surfaceMuted]),
-                  borderRadius: BorderRadius.circular(28),
-                ),
+                decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(24)),
                 // Fixed design canvas, scaled to whatever width the phone has.
                 child: FittedBox(child: SizedBox(width: 340, child: data.art)),
               ),
               const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: p.brandSoft, borderRadius: BorderRadius.circular(99)),
-                child: Text('Step ${index + 1} · ${data.step}', style: TextStyle(color: p.brand, fontWeight: FontWeight.w600, fontSize: 12.5)),
+              Text(
+                '0${index + 1} · ${data.step.toUpperCase()}',
+                style: labelCaps(p).copyWith(color: p.brand),
               ),
               const SizedBox(height: 12),
-              Text(data.title, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, height: 1.15, letterSpacing: -0.4)),
+              Text(data.title, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w300, height: 1.1, letterSpacing: -0.8)),
               const SizedBox(height: 12),
-              Text(data.body, style: TextStyle(fontSize: 15.5, height: 1.45, color: p.mutedForeground)),
+              Text(data.body, style: TextStyle(fontSize: 16, height: 1.55, color: p.mutedForeground)),
             ],
           ),
         ),
@@ -201,28 +207,43 @@ class _SelectorArt extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < rows.length; i++)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 5),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: Row(
-                children: [
-                  Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.w700, color: p.mutedForeground)),
-                  const SizedBox(width: 10),
-                  Flag(code: rows[i].$1, size: 24),
-                  const SizedBox(width: 8),
-                  SizedBox(width: 70, child: Text(rows[i].$2, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5))),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(99),
-                      child: LinearProgressIndicator(value: rows[i].$3, minHeight: 7, backgroundColor: p.surfaceMuted, color: p.brand),
+            FadeSlideIn(
+              delay: Duration(milliseconds: 120 + 110 * i),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '${i + 1}',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: p.mutedForeground),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Flag(code: rows[i].$1, size: 24),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 70,
+                      child: Text(rows[i].$2, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                    ),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: rows[i].$3),
+                          duration: Duration(milliseconds: 900 + 120 * i),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, v, _) =>
+                              LinearProgressIndicator(value: v, minHeight: 7, backgroundColor: p.surfaceMuted, color: p.brand),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -261,7 +282,15 @@ class _OptimizerArt extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(color: p.surface, borderRadius: BorderRadius.circular(16)),
               padding: const EdgeInsets.all(12),
-              child: CustomPaint(painter: _CurvesPainter(strategy: p.brand, hold: p.mutedForeground, split: p.border), size: Size.infinite),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 1400),
+                curve: Curves.easeInOutCubic,
+                builder: (context, t, _) => CustomPaint(
+                  painter: _CurvesPainter(strategy: p.brand, hold: p.mutedForeground, split: p.border, progress: t),
+                  size: Size.infinite,
+                ),
+              ),
             ),
           ),
         ],
@@ -271,11 +300,20 @@ class _OptimizerArt extends StatelessWidget {
 }
 
 class _CurvesPainter extends CustomPainter {
-  _CurvesPainter({required this.strategy, required this.hold, required this.split});
+  _CurvesPainter({required this.strategy, required this.hold, required this.split, this.progress = 1});
 
   final Color strategy;
   final Color hold;
   final Color split;
+  final double progress;
+
+  Path _partial(Path path) {
+    final out = Path();
+    for (final metric in path.computeMetrics()) {
+      out.addPath(metric.extractPath(0, metric.length * progress), Offset.zero);
+    }
+    return out;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -290,17 +328,23 @@ class _CurvesPainter extends CustomPainter {
     }
 
     final splitX = size.width * 0.7;
-    canvas.drawLine(Offset(splitX, 0), Offset(splitX, size.height), Paint()..color = split..strokeWidth = 1.5);
+    canvas.drawLine(
+      Offset(splitX, 0),
+      Offset(splitX, size.height),
+      Paint()
+        ..color = split
+        ..strokeWidth = 1.5,
+    );
     final stroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
-    canvas.drawPath(curve((t) => 0.3 + 0.25 * t + 0.08 * math.sin(t * 14)), stroke..color = hold.withValues(alpha: 0.7));
-    canvas.drawPath(curve((t) => 0.25 + 0.6 * t + 0.05 * math.sin(t * 9)), stroke..color = strategy);
+    canvas.drawPath(_partial(curve((t) => 0.3 + 0.25 * t + 0.08 * math.sin(t * 14))), stroke..color = hold.withValues(alpha: 0.7));
+    canvas.drawPath(_partial(curve((t) => 0.25 + 0.6 * t + 0.05 * math.sin(t * 9))), stroke..color = strategy);
   }
 
   @override
-  bool shouldRepaint(covariant _CurvesPainter old) => old.strategy != strategy || old.hold != hold;
+  bool shouldRepaint(covariant _CurvesPainter old) => old.progress != progress || old.strategy != strategy || old.hold != hold;
 }
 
 class _AdviserArt extends StatelessWidget {
@@ -319,40 +363,44 @@ class _AdviserArt extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (symbol, type, reason) in items)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 5),
-              padding: const EdgeInsets.fromLTRB(0, 0, 12, 0),
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: IntrinsicHeight(
-                child: Row(
-                  children: [
-                    Container(
-                      width: 5,
-                      decoration: BoxDecoration(
-                        color: SignalBadge.colors(p, type).$1,
-                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(symbol, style: const TextStyle(fontWeight: FontWeight.w700)),
-                            Text(reason, style: TextStyle(fontSize: 11.5, color: p.mutedForeground)),
-                          ],
+          for (final (i, (symbol, type, reason)) in items.indexed)
+            FadeSlideIn(
+              delay: Duration(milliseconds: 150 + 260 * i),
+              offset: 22,
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 5),
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 0),
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                ),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 5,
+                        decoration: BoxDecoration(
+                          color: SignalBadge.colors(p, type).$1,
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
                         ),
                       ),
-                    ),
-                    SignalBadge(type: type, size: BadgeSize.sm),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(symbol, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              Text(reason, style: TextStyle(fontSize: 11.5, color: p.mutedForeground)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SignalBadge(type: type, size: BadgeSize.sm),
+                    ],
+                  ),
                 ),
               ),
             ),

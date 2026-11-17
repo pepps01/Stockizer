@@ -1,29 +1,37 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Lato } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
-import { Navbar } from "@/components/layout/Navbar";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { SignalToaster } from "@/components/layout/SignalToaster";
+import { AppFooter } from "@/components/layout/AppFooter";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme-boot";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// Lato is the house typeface (static font, so the weights are listed).
+const lato = Lato({ variable: "--font-lato", weight: ["300", "400", "700", "900"], subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "Algizer — algebraic trading adviser", template: "%s · Algizer" },
-  description: "Evalucre Capital's Algizer ranks stocks across global exchanges, tunes an algebraic signal, and streams live buy / sell / hold advice.",
+  title: { default: "Stockiser — signals, not noise", template: "%s · Stockiser" },
+  description: "Stockiser ranks stocks across global exchanges, tunes an algebraic signal on their history, and streams live buy / sell / hold advice.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">
+    // The boot script sets data-theme before React hydrates, so the attribute differs from the server's.
+    <html lang="en" className={`${lato.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="min-h-full">
         <AuthProvider>
-          <Navbar />
-          {children}
+          <div className="flex min-h-screen flex-col lg:flex-row">
+            <Sidebar />
+            <div className="flex min-w-0 flex-1 flex-col">
+              {children}
+              <AppFooter />
+            </div>
+          </div>
           <SignalToaster />
-          <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-            Algizer emits signals only and never places trades. Prices marked “Simulated” are model-generated. Not investment advice.
-          </footer>
         </AuthProvider>
       </body>
     </html>

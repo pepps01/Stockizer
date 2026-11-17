@@ -19,7 +19,9 @@ enum SignalType {
   }
 }
 
-/// The five signal-engine parameters: fast, slow, window, trend_weight, threshold.
+/// Signal-engine parameter values by name; the names depend on the strategy
+/// (algebraic: fast, slow, window, trend_weight, threshold · indicators:
+/// stoch_*, macd_*, rsi_window, overbought, oversold, threshold).
 typedef SignalParams = Map<String, double>;
 
 SignalParams parseParams(Object? json) => (json as Json? ?? const {}).map((k, v) => MapEntry(k, toDouble(v)));
@@ -33,8 +35,9 @@ class AdviserSignal {
   final double price;
   final String asOf;
   final String reason;
-  final double trend;
-  final double z;
+  final String strategy; // "algebraic" | "indicators"
+  /// algebraic: trend, z · indicators: macd_hist, rsi, stoch_d
+  final Map<String, double> components;
   final SignalParams parameters;
   final String dataSource;
   final bool marketOpen;
@@ -46,14 +49,16 @@ class AdviserSignal {
     required this.price,
     required this.asOf,
     required this.reason,
-    required this.trend,
-    required this.z,
+    required this.strategy,
+    required this.components,
     required this.parameters,
     required this.dataSource,
     required this.marketOpen,
   });
 
   double get threshold => parameters['threshold'] ?? 0;
+  double get trend => components['trend'] ?? 0;
+  double get z => components['z'] ?? 0;
 
   factory AdviserSignal.fromJson(Json json) {
     final components = json['components'] as Json? ?? const {};
@@ -64,8 +69,8 @@ class AdviserSignal {
       price: toDouble(json['price']),
       asOf: json['as_of']?.toString() ?? '',
       reason: json['reason'] as String? ?? '',
-      trend: toDouble(components['trend']),
-      z: toDouble(components['z']),
+      strategy: json['strategy'] as String? ?? 'algebraic',
+      components: {for (final e in components.entries) if (e.value is num) e.key: (e.value as num).toDouble()},
       parameters: parseParams(json['parameters']),
       dataSource: json['data_source'] as String? ?? 'yahoo',
       marketOpen: json['market_open'] as bool? ?? false,
@@ -169,6 +174,7 @@ class OptimizerRun {
   final String trainingStart;
   final String trainingEnd;
   final String objective;
+  final String strategy;
   final double? bestScore;
   final SignalParams parameters;
   final bool? minTradesMet;
@@ -190,6 +196,7 @@ class OptimizerRun {
     required this.trainingStart,
     required this.trainingEnd,
     required this.objective,
+    this.strategy = 'algebraic',
     this.bestScore,
     required this.parameters,
     this.minTradesMet,
@@ -218,6 +225,7 @@ class OptimizerRun {
       trainingStart: json['training_start'] as String? ?? '',
       trainingEnd: json['training_end'] as String? ?? '',
       objective: json['objective'] as String? ?? '',
+      strategy: json['strategy'] as String? ?? 'algebraic',
       bestScore: toDoubleOrNull(json['best_score']),
       parameters: parseParams(json['parameters']),
       minTradesMet: metrics['min_trades_met'] as bool?,
@@ -257,16 +265,48 @@ class ParamOption {
       );
 }
 
-class OptimizerOptions {
-  final List<String> objectives;
+/// A signal engine the Optimizer can tune, with its own parameters.
+class StrategyOption {
+  final String key;
+  final String label;
+  final String description;
   final List<ParamOption> parameters;
 
-  const OptimizerOptions({required this.objectives, required this.parameters});
+  const StrategyOption({required this.key, required this.label, required this.description, required this.parameters});
 
-  factory OptimizerOptions.fromJson(Json json) => OptimizerOptions(
-        objectives: (json['objectives'] as List<dynamic>? ?? const []).cast<String>(),
+  factory StrategyOption.fromJson(Json json) => StrategyOption(
+        key: json['key'] as String,
+        label: json['label'] as String? ?? json['key'] as String,
+        description: json['description'] as String? ?? '',
         parameters: listOf(json['parameters'], ParamOption.fromJson),
       );
+}
+
+/// Short names for compact UI.
+const strategyShortNames = {'algebraic': 'Algebraic', 'indicators': 'Stoch · MACD · RSI'};
+
+class OptimizerOptions {
+  final List<String> objectives;
+  final List<StrategyOption> strategies;
+  final String defaultStrategy;
+
+  const OptimizerOptions({required this.objectives, required this.strategies, required this.defaultStrategy});
+
+  /// The default strategy's parameters.
+  List<ParamOption> get parameters => strategy(defaultStrategy)?.parameters ?? const [];
+
+  StrategyOption? strategy(String key) => strategies.where((s) => s.key == key).firstOrNull;
+
+  factory OptimizerOptions.fromJson(Json json) {
+    final strategies = listOf(json['strategies'], StrategyOption.fromJson);
+    return OptimizerOptions(
+      objectives: (json['objectives'] as List<dynamic>? ?? const []).cast<String>(),
+      strategies: strategies.isNotEmpty
+          ? strategies
+          : [StrategyOption(key: 'algebraic', label: 'Algebraic', description: '', parameters: listOf(json['parameters'], ParamOption.fromJson))],
+      defaultStrategy: json['default_strategy'] as String? ?? 'algebraic',
+    );
+  }
 }
 
 class AdviserSession {

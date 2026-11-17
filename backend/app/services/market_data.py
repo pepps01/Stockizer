@@ -4,7 +4,9 @@ through the bar repository, and keeps short-lived in-memory quote snapshots."""
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -53,6 +55,7 @@ class QuoteCache:
 
 
 class MarketDataService(IMarketDataService):
+    FUNDAMENTALS_WORKERS = 8
     QUOTE_TTL = {"yahoo": 90, "synthetic": 10}
     HISTORY_REFRESH_SECONDS = 900
 
@@ -195,6 +198,27 @@ class MarketDataService(IMarketDataService):
         if ticker.kind == "index":
             return {}
         return self._fundamentals[self.source_name(ticker)].fundamentals(ticker, price)
+
+    def fundamentals_many(self, tickers: list) -> dict[str, dict]:
+        """Synthetic fundamentals are computed here; Yahoo lookups (one HTTP call
+        each, cached for hours) run on a small thread pool. Worker threads get
+        plain symbol objects, never ORM instances."""
+        out: dict[str, dict] = {}
+        remote = []
+        for ticker in tickers:
+            if ticker.kind == "index":
+                continue
+            source = self.source_name(ticker)
+            if source == "yahoo":
+                remote.append(SimpleNamespace(symbol=ticker.symbol))
+            else:
+                out[ticker.symbol] = self._fundamentals[source].fundamentals(ticker, None)
+        if remote:
+            provider = self._fundamentals["yahoo"]
+            with ThreadPoolExecutor(max_workers=self.FUNDAMENTALS_WORKERS) as pool:
+                for ref, data in zip(remote, pool.map(lambda r: provider.fundamentals(r, None), remote)):
+                    out[ref.symbol] = data
+        return out
 
     def market_status(self, exchange) -> dict:
         session = self._mapper.session(exchange)

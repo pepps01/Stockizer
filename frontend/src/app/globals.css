@@ -1,22 +1,55 @@
 @import "tailwindcss";
 
+/* "Quiet Ledger": ink on white, one indigo accent, colour only for meaning
+   (gain / loss / hold). Mirrors mobile/lib/theme.dart. */
 :root {
   color-scheme: light;
   --background: #ffffff;
-  --foreground: #131722;
+  --foreground: #101418;
   --surface: #ffffff;
-  --surface-muted: #f1f3f9;
-  --border: #e3e6ef;
-  --muted-foreground: #6b7080;
-  --brand: #4f46e5;
-  --brand-soft: #eef0ff;
+  --surface-muted: #f4f4f1;
+  --sidebar: #fafaf8;
+  --border: #e8e8e4;
+  --muted-foreground: #5a616b;
+  --ink: #101418;
+  --ink-foreground: #ffffff;
+  --brand: #4338ca;
+  --brand-soft: #eeedfb;
   --brand-foreground: #ffffff;
-  --gain: #089981;
-  --gain-soft: #e6f5f2;
-  --loss: #f23645;
-  --loss-soft: #fdecee;
-  --hold: #e38a00;
-  --hold-soft: #fff4e0;
+  --gain: #0b7a4b;
+  --gain-soft: #e7f4ed;
+  --loss: #c0362c;
+  --loss-soft: #fbebe9;
+  --hold: #a34b07;
+  --hold-soft: #fbf1e6;
+  /* Logo colours: main buttons wear the mark's mint tile and forest S. */
+  --mint: #4ee478;
+  --mint-deep: #25b356;
+  --forest: #114325;
+}
+
+/* Dark mode: chosen in Investor profile → Appearance (data-theme on <html>),
+   or following the device when set to System. Same roles, night palette. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0c100e;
+  --foreground: #eaf0ec;
+  --surface: #121815;
+  --surface-muted: #19211d;
+  --sidebar: #0f1412;
+  --border: #253029;
+  --muted-foreground: #98a59e;
+  --ink: #eaf0ec;
+  --ink-foreground: #0c100e;
+  --brand: #8f8bff;
+  --brand-soft: #24224d;
+  --brand-foreground: #0c100e;
+  --gain: #3fcf8e;
+  --gain-soft: #10291c;
+  --loss: #ff7b6f;
+  --loss-soft: #351613;
+  --hold: #f2a453;
+  --hold-soft: #33220f;
 }
 
 @theme inline {
@@ -24,8 +57,11 @@
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-sidebar: var(--sidebar);
   --color-border: var(--border);
   --color-muted-foreground: var(--muted-foreground);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
   --color-brand: var(--brand);
   --color-brand-soft: var(--brand-soft);
   --color-brand-foreground: var(--brand-foreground);
@@ -35,30 +71,205 @@
   --color-loss-soft: var(--loss-soft);
   --color-hold: var(--hold);
   --color-hold-soft: var(--hold-soft);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-mint: var(--mint);
+  --color-mint-deep: var(--mint-deep);
+  --color-forest: var(--forest);
+  --font-sans: var(--font-lato);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
 
 @layer components {
   .input {
-    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none transition-colors focus:border-brand;
+    @apply w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-foreground;
   }
   .card {
     @apply rounded-2xl border border-border bg-surface;
   }
+  /* A shaded panel: used only where the user makes a decision. */
+  .panel {
+    @apply rounded-2xl bg-surface-muted;
+  }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-mint px-5 py-2.5 text-sm font-bold text-forest shadow-[0_6px_16px_-10px_rgba(17,67,37,0.6)] transition-colors duration-150 hover:bg-forest hover:text-mint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-mint disabled:hover:text-forest;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-surface-muted px-5 py-2.5 text-sm font-bold text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .label-caps {
+    @apply text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground;
   }
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Public landing page (components/landing/Landing.tsx): warm cream, deep
+   forest and a lime call to action, scoped so the app keeps Quiet Ledger. */
+.landing {
+  --l-cream: #f7f5ef;
+  --l-forest: #0e3b32;
+  --l-lime: #4ee478; /* the logo mint */
+  --l-ink: #111614;
+  --l-muted: #5b625e;
+}
+
+.landing-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  border-radius: 9999px;
+  background: var(--l-lime);
+  color: var(--l-forest);
+  padding: 0 1.5rem;
+  font-weight: 900;
+  box-shadow: 0 12px 26px -14px rgba(14, 59, 50, 0.55);
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+.landing-cta:hover {
+  transform: translateY(-1px);
+  background: var(--forest);
+  color: var(--mint);
+  box-shadow: 0 16px 30px -14px rgba(14, 59, 50, 0.6);
+}
+.landing-cta:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+
+@keyframes landing-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.landing-marquee {
+  animation: landing-marquee 60s linear infinite;
+}
+.landing-marquee:hover {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee {
+    animation: none;
+  }
+}
+
+/* Right-hand drawer (components/symbol/FinancialsDrawer.tsx): the panel glides
+   in from the right on a long ease-out, the backdrop fades, and the sections
+   cascade in just behind it. */
+.drawer-root {
+  visibility: hidden;
+  transition: visibility 0s linear 520ms;
+}
+.drawer-root[data-open="true"] {
+  visibility: visible;
+  transition-delay: 0s;
+}
+.drawer-backdrop {
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+.drawer-root[data-open="true"] .drawer-backdrop {
+  opacity: 1;
+}
+.drawer-panel {
+  transform: translateX(104%);
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.drawer-root[data-open="true"] .drawer-panel {
+  transform: translateX(0);
+}
+.drawer-stagger > * {
+  opacity: 0;
+  transform: translateX(28px);
+  transition: opacity 420ms ease, transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.drawer-root[data-open="true"] .drawer-stagger > * {
+  opacity: 1;
+  transform: none;
+}
+.drawer-root[data-open="true"] .drawer-stagger > :nth-child(1) { transition-delay: 140ms; }
+.drawer-root[data-open="true"] .drawer-stagger > :nth-child(2) { transition-delay: 200ms; }
+.drawer-root[data-open="true"] .drawer-stagger > :nth-child(3) { transition-delay: 260ms; }
+.drawer-root[data-open="true"] .drawer-stagger > :nth-child(4) { transition-delay: 320ms; }
+
+/* Accordion body: animates its height by easing the grid row from 0fr to 1fr. */
+.accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.accordion-body[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.accordion-chevron {
+  transition: transform 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-root,
+  .drawer-backdrop,
+  .drawer-panel,
+  .drawer-stagger > *,
+  .accordion-body,
+  .accordion-chevron {
+    transition: none !important;
+  }
+}
+
+/* A rectangular call-to-action that reads as a button next to pill-shaped tabs
+   (e.g. "Get Financials"): solid ink, lifts and turns forest green on hover. */
+.btn-action {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 10px;
+  background: var(--forest);
+  color: var(--mint);
+  padding: 0 1.15rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 6px 16px -8px rgba(16, 20, 24, 0.55);
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+.btn-action:hover:not(:disabled) {
+  background: var(--mint);
+  color: var(--forest);
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 12px 24px -10px rgba(17, 67, 37, 0.65);
+}
+.btn-action:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px -2px rgba(16, 20, 24, 0.5);
+}
+.btn-action:focus-visible {
+  outline: 2px solid var(--mint-deep);
+  outline-offset: 2px;
+}
+.btn-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.btn-action .btn-action-arrow {
+  transition: transform 180ms ease;
+}
+.btn-action:hover:not(:disabled) .btn-action-arrow {
+  transform: translateX(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-action,
+  .btn-action .btn-action-arrow {
+    transition: none;
   }
 }

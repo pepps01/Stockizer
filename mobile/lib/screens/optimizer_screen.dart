@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../widgets/badges.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
+import '../widgets/motion.dart';
 import 'search_screen.dart';
 import 'selector_screen.dart' show DateButton, Stepper1D;
 import 'strategy_screen.dart';
@@ -43,6 +44,7 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
   DateTime _trainingStart = yearsAgo(4);
   DateTime _trainingEnd = yearsAgo(1);
   String _objective = 'sharpe';
+  String _strategy = 'algebraic';
   final Map<String, (double, double)> _bounds = {};
   List<OptimizerRun> _batch = const [];
   OptimizerRun? _selected;
@@ -94,6 +96,7 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
         trainingStart: isoDate(_trainingStart),
         trainingEnd: isoDate(_trainingEnd),
         objective: _objective,
+        strategy: _strategy,
         bounds: _bounds,
       );
       if (!mounted) return;
@@ -101,6 +104,7 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
         _batch = runs;
         _history = _api.optimizerRuns(_token);
       });
+      Haptics.alert();
       final first = runs.where((r) => r.completed).firstOrNull;
       if (first != null) await _select(first);
     } catch (e) {
@@ -145,7 +149,7 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
         _selectorRuns = _api.selectorRuns(_token);
       }),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         children: [
           Text(
             'Tune the algebraic signal’s parameters on a training period, then check them on the unseen period that follows — compared with simply buying and holding.',
@@ -174,11 +178,33 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
   Widget _form(OptimizerOptions options) {
     final objectives = options.objectives.isEmpty ? const ['sharpe'] : options.objectives;
     final objective = objectives.contains(_objective) ? _objective : objectives.first;
+    final strategy = options.strategy(_strategy) ?? options.strategies.first;
     return SectionCard(
       title: 'Configure',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (options.strategies.length > 1) ...[
+            LabeledField(
+              label: 'Strategy',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Segmented<String>(
+                    value: strategy.key,
+                    options: [for (final s in options.strategies) (s.key, strategyShortNames[s.key] ?? s.label)],
+                    onChanged: (key) => setState(() {
+                      _strategy = key;
+                      _bounds.clear(); // each strategy has its own parameters
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(strategy.description, style: TextStyle(fontSize: 12.5, height: 1.4, color: context.palette.mutedForeground)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           Segmented<_Source>(
             value: _source,
             onChanged: (s) => setState(() => _source = s),
@@ -209,7 +235,10 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
                                 for (final r in runs)
                                   DropdownMenuItem(
                                     value: r.id,
-                                    child: Text('${r.exchange} · ${r.metric} · ${r.periodStart}→${r.periodEnd}', overflow: TextOverflow.ellipsis),
+                                    child: Text(
+                                      '${r.exchange} · ${r.metric} · ${r.periodStart}→${r.periodEnd}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                               ],
                               onChanged: (v) => setState(() => _selectorRunId = v),
@@ -248,53 +277,88 @@ class _OptimizerScreenState extends State<OptimizerScreen> with AutomaticKeepAli
   }
 
   List<Widget> _commonFields(OptimizerOptions options, List<String> objectives, String objective, VoidCallback submit) => [
-        Row(
-          children: [
-            Expanded(child: LabeledField(label: 'Training from', child: DateButton(date: _trainingStart, onTap: () => _pickDate(start: true)))),
-            const SizedBox(width: 12),
-            Expanded(child: LabeledField(label: 'Training to', child: DateButton(date: _trainingEnd, onTap: () => _pickDate(start: false)))),
+    Row(
+      children: [
+        Expanded(
+          child: LabeledField(
+            label: 'Training from',
+            child: DateButton(date: _trainingStart, onTap: () => _pickDate(start: true)),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: LabeledField(
+            label: 'Training to',
+            child: DateButton(date: _trainingEnd, onTap: () => _pickDate(start: false)),
+          ),
+        ),
+      ],
+    ),
+    const SizedBox(height: 14),
+    LabeledField(
+      label: 'Objective',
+      child: DropdownButtonFormField<String>(
+        initialValue: objective,
+        isExpanded: true,
+        items: [for (final o in objectives) DropdownMenuItem(value: o, child: Text(o.replaceAll('_', ' ')))],
+        onChanged: (v) => setState(() => _objective = v ?? _objective),
+      ),
+    ),
+    const SizedBox(height: 6),
+    Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: const Text('Parameter bounds', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        subtitle: Text(
+          _bounds.isEmpty ? 'Engine defaults' : '${_bounds.length} customised',
+          style: TextStyle(fontSize: 12, color: context.palette.mutedForeground),
+        ),
+        children: [
+          for (final (group, params) in _grouped((options.strategy(_strategy) ?? options.strategies.first).parameters)) ...[
+            if (group.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 6),
+                child: Align(alignment: Alignment.centerLeft, child: Text(group.toUpperCase(), style: labelCaps(context.palette))),
+              ),
+            for (final param in params)
+              _BoundSlider(
+                param: param,
+                value: _bounds[param.name] ?? (param.low, param.high),
+                onChanged: (v) => setState(() => _bounds[param.name] = v),
+              ),
           ],
-        ),
-        const SizedBox(height: 14),
-        LabeledField(
-          label: 'Objective',
-          child: DropdownButtonFormField<String>(
-            initialValue: objective,
-            isExpanded: true,
-            items: [for (final o in objectives) DropdownMenuItem(value: o, child: Text(o.replaceAll('_', ' ')))],
-            onChanged: (v) => setState(() => _objective = v ?? _objective),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
-            title: const Text('Parameter bounds', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-            subtitle: Text(
-              _bounds.isEmpty ? 'Engine defaults' : '${_bounds.length} customised',
-              style: TextStyle(fontSize: 12, color: context.palette.mutedForeground),
+          if (_bounds.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => setState(_bounds.clear), child: const Text('Reset to defaults')),
             ),
-            children: [
-              for (final param in options.parameters)
-                _BoundSlider(
-                  param: param,
-                  value: _bounds[param.name] ?? (param.low, param.high),
-                  onChanged: (v) => setState(() => _bounds[param.name] = v),
-                ),
-              if (_bounds.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(onPressed: () => setState(_bounds.clear), child: const Text('Reset to defaults')),
-                ),
-            ],
-          ),
-        ),
-        ErrorNote(_error),
-        const SizedBox(height: 8),
-        BusyButton(label: 'Tune to optimal parameters', busyLabel: 'Tuning…', icon: Icons.tune, busy: _busy, onPressed: submit),
-      ];
+        ],
+      ),
+    ),
+    ErrorNote(_error),
+    const SizedBox(height: 8),
+    BusyButton(label: 'Estimate parameters', busyLabel: 'Estimating…', icon: Icons.tune, busy: _busy, onPressed: submit),
+  ];
+
+  /// Indicator parameters are shown in the groups traders know them by
+  /// (Stochastic · MACD · RSI); the algebraic strategy needs no headings.
+  static List<(String, List<ParamOption>)> _grouped(List<ParamOption> params) {
+    String group(String name) {
+      if (name.startsWith('stoch_')) return 'Stochastic';
+      if (name.startsWith('macd_')) return 'MACD';
+      if (name.startsWith('rsi_') || name == 'overbought' || name == 'oversold') return 'RSI';
+      return 'Signal';
+    }
+
+    final groups = <String, List<ParamOption>>{};
+    for (final param in params) {
+      groups.putIfAbsent(group(param.name), () => []).add(param);
+    }
+    if (groups.length == 1) return [('', params)];
+    return [for (final e in groups.entries) (e.key, e.value)];
+  }
 }
 
 class _BoundSlider extends StatelessWidget {
@@ -317,8 +381,13 @@ class _BoundSlider extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text(param.description, style: TextStyle(fontSize: 12.5, color: p.mutedForeground))),
-              Text('${fmt(lo)} – ${fmt(hi)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: _tabular)),
+              Expanded(
+                child: Text(param.description, style: TextStyle(fontSize: 12.5, color: p.mutedForeground)),
+              ),
+              Text(
+                '${fmt(lo)} – ${fmt(hi)}',
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: _tabular),
+              ),
             ],
           ),
           RangeSlider(
@@ -372,12 +441,15 @@ class _RunRow extends StatelessWidget {
     final p = context.palette;
     final objective = run.objective;
     Widget cell(String label, String value) => Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(label, style: TextStyle(fontSize: 10, color: p.mutedForeground)),
-            Text(value, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: _tabular)),
-          ],
-        );
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(label, style: TextStyle(fontSize: 10, color: p.mutedForeground)),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: _tabular),
+        ),
+      ],
+    );
     return Row(
       children: [
         Expanded(
@@ -432,8 +504,14 @@ class _RunDetailState extends State<_RunDetail> {
     final token = context.read<AuthProvider>().token!;
     setState(() => _starting = true);
     try {
-      await context.read<ApiClient>().createSession(token, symbol: widget.run.ticker.symbol, intervalSec: _interval, optimizerRunId: widget.run.id);
+      await context.read<ApiClient>().createSession(
+        token,
+        symbol: widget.run.ticker.symbol,
+        intervalSec: _interval,
+        optimizerRunId: widget.run.id,
+      );
       if (!mounted) return;
+      Haptics.alert();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Adviser session started with these parameters.'),
@@ -474,6 +552,11 @@ class _RunDetailState extends State<_RunDetail> {
               ],
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            '${(strategyShortNames[run.strategy] ?? run.strategy).toUpperCase()} · ${run.objective.replaceAll('_', ' ').toUpperCase()}',
+            style: labelCaps(p),
+          ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 6,
@@ -484,10 +567,15 @@ class _RunDetailState extends State<_RunDetail> {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(99)),
                   child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: '${e.key} = '),
-                      TextSpan(text: formatParam(e.value), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ]),
+                    TextSpan(
+                      children: [
+                        TextSpan(text: '${e.key} = '),
+                        TextSpan(
+                          text: formatParam(e.value),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
                     style: const TextStyle(fontSize: 12, fontFeatures: _tabular),
                   ),
                 ),
@@ -498,13 +586,13 @@ class _RunDetailState extends State<_RunDetail> {
             const Notice('No parameter set traded often enough in training — treat these values with caution.', tone: NoticeTone.hold),
           ],
           const SizedBox(height: 14),
-          Segmented<_Period>(
-            value: _period,
-            onChanged: (v) => setState(() => _period = v),
-            options: [
-              (_Period.train, 'Training ${run.trainingStart} → ${run.trainingEnd}'),
-              if (run.test != null) (_Period.test, 'Unseen ${run.testStart ?? ''} → ${run.testEnd ?? ''}'),
-            ],
+          _PeriodBand(
+            run: run,
+            period: _period,
+            onChanged: (v) {
+              if (v != _period) Haptics.tick();
+              setState(() => _period = v);
+            },
           ),
           if (summary != null) ...[
             const SizedBox(height: 12),
@@ -550,8 +638,13 @@ class _StatsTable extends StatelessWidget {
     final s = summary.strategy;
     final b = summary.buyAndHold;
     final rows = <(String, String, String, Color?, Color?)>[
-      ('Return', formatRatioPercent(s['total_return'], digits: 1, signed: true), formatRatioPercent(b['total_return'], digits: 1, signed: true),
-          p.change(s['total_return']), p.change(b['total_return'])),
+      (
+        'Return',
+        formatRatioPercent(s['total_return'], digits: 1, signed: true),
+        formatRatioPercent(b['total_return'], digits: 1, signed: true),
+        p.change(s['total_return']),
+        p.change(b['total_return']),
+      ),
       ('CAGR', formatRatioPercent(s['cagr'], digits: 1, signed: true), formatRatioPercent(b['cagr'], digits: 1, signed: true), null, null),
       ('Sharpe', formatNumber(s['sharpe'], 2), formatNumber(b['sharpe'], 2), null, null),
       ('Sortino', formatNumber(s['sortino'], 2), formatNumber(b['sortino'], 2), null, null),
@@ -564,17 +657,102 @@ class _StatsTable extends StatelessWidget {
       columnWidths: const {0: FlexColumnWidth(1.3), 1: FlexColumnWidth(), 2: FlexColumnWidth()},
       border: TableBorder(horizontalInside: BorderSide(color: p.border)),
       children: [
-        TableRow(children: [
-          Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('', style: head)),
-          Text('Algizer signal', textAlign: TextAlign.right, style: head.copyWith(color: p.brand, fontWeight: FontWeight.w600)),
-          Text('Buy & hold', textAlign: TextAlign.right, style: head),
-        ]),
+        TableRow(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('', style: head),
+            ),
+            Text(
+              'Stockiser signal',
+              textAlign: TextAlign.right,
+              style: head.copyWith(color: p.brand, fontWeight: FontWeight.w600),
+            ),
+            Text('Buy & hold', textAlign: TextAlign.right, style: head),
+          ],
+        ),
         for (final (label, sv, bv, sc, bc) in rows)
-          TableRow(children: [
-            Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Text(label, style: const TextStyle(fontSize: 13))),
-            Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Text(sv, textAlign: TextAlign.right, style: cell(sc))),
-            Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Text(bv, textAlign: TextAlign.right, style: cell(bc))),
-          ]),
+          TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Text(label, style: const TextStyle(fontSize: 13)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Text(sv, textAlign: TextAlign.right, style: cell(sc)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Text(bv, textAlign: TextAlign.right, style: cell(bc)),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+/// Training vs unseen, side by side: each column shows its dates and the
+/// strategy's return against buy-and-hold. The selected one is underlined in ink;
+/// the unseen period is the honest one, so it carries the accent label.
+class _PeriodBand extends StatelessWidget {
+  const _PeriodBand({required this.run, required this.period, required this.onChanged});
+
+  final OptimizerRun run;
+  final _Period period;
+  final ValueChanged<_Period> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    Widget column(_Period value, String label, String dates, BacktestSummary? summary, {bool accent = false}) {
+      final selected = value == period;
+      final ret = summary?.strategy['total_return'];
+      final bh = summary?.buyAndHold['total_return'];
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: selected,
+          child: InkWell(
+            onTap: () => onChanged(value),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.fromLTRB(0, 12, 8, 12),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: selected ? p.ink : p.border, width: selected ? 2 : 1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: labelCaps(p).copyWith(color: accent ? p.brand : p.mutedForeground)),
+                  const SizedBox(height: 2),
+                  Text(dates, style: TextStyle(fontSize: 11.5, color: p.mutedForeground, fontFeatures: _tabular)),
+                  const SizedBox(height: 8),
+                  Text(
+                    formatRatioPercent(ret, digits: 1, signed: true),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: p.change(ret), fontFeatures: _tabular),
+                  ),
+                  Text(
+                    'vs ${formatRatioPercent(bh, digits: 1, signed: true)} buy & hold',
+                    style: TextStyle(fontSize: 11.5, color: p.mutedForeground),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        column(_Period.train, 'TRAINING', '${run.trainingStart} → ${run.trainingEnd}', run.train),
+        if (run.test != null) ...[
+          const SizedBox(width: 16),
+          column(_Period.test, 'UNSEEN', '${run.testStart ?? ''} → ${run.testEnd ?? ''}', run.test, accent: true),
+        ],
       ],
     );
   }

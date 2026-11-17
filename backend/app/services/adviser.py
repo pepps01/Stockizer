@@ -7,16 +7,17 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from app.contracts.analytics import ISignalEngine
+from app.contracts.analytics import ISignalEngine, IStrategyRegistry
 from app.contracts.repositories import (
     IAdviserSessionRepository,
     ICatalogRepository,
+    IDeviceTokenRepository,
     IOptimizerRunRepository,
     ISignalRepository,
     IUnitOfWork,
     IUserRepository,
 )
-from app.contracts.services import IAdviserService, IEmailService, IMarketDataService
+from app.contracts.services import IAdviserService, IEmailService, IMarketDataService, IPushService
 from app.domain.errors import NotFoundError, UnprocessableError, ValidationError
 from app.models import AdviserSession, Signal
 from app.models.base import utcnow
@@ -35,22 +36,26 @@ class AdviserService(IAdviserService):
         self,
         catalog: ICatalogRepository,
         market_data: IMarketDataService,
-        engine: ISignalEngine,
+        strategies: IStrategyRegistry,
         sessions: IAdviserSessionRepository,
         signals: ISignalRepository,
         optimizer_runs: IOptimizerRunRepository,
         users: IUserRepository,
         email: IEmailService,
+        push: IPushService,
+        devices: IDeviceTokenRepository,
         uow: IUnitOfWork,
     ):
         self._catalog = catalog
         self._data = market_data
-        self._engine = engine
+        self._strategies = strategies
         self._sessions = sessions
         self._signals = signals
         self._optimizer_runs = optimizer_runs
         self._users = users
         self._email = email
+        self._push = push
+        self._devices = devices
         self._uow = uow
 
     # ---- evaluation ----------------------------------------------------------------------
@@ -58,18 +63,22 @@ class AdviserService(IAdviserService):
     def signal_for(self, symbol: str, *, user_id: str | None, optimizer_run_id: str | None) -> dict:
         ticker = self._require_ticker(symbol)
         params, run = self._params_for(user_id, ticker, optimizer_run_id)
-        result = self._evaluate(ticker, params)
+        result = self._evaluate(ticker, self._engine_for(run), params)
         if result is None:
             raise UnprocessableError("Not enough price history to compute a signal")
         return {"signal": result, "optimizer_run_id": run.id if run else None}
 
-    def _evaluate(self, ticker, params: dict) -> dict | None:
-        params = self._engine.clean_params(params)
+    def _engine_for(self, run) -> ISignalEngine:
+        """The engine an optimizer run tuned; the default engine when there is no run."""
+        return (self._strategies.get(run.strategy) if run else None) or self._strategies.default
+
+    def _evaluate(self, ticker, engine: ISignalEngine, params: dict) -> dict | None:
+        params = engine.clean_params(params)
         bars = self._data.history_one(ticker, date.today() - timedelta(days=self.HISTORY_DAYS))
         close = self._with_live_price(bars["close"] if len(bars) else pd.Series(dtype=float), ticker)
-        if len(close) < self._engine.warmup_bars(params) // 2:
+        if len(close) < engine.warmup_bars(params) // 2:
             return None
-        result = self._engine.latest_signal(close, params)
+        result = engine.latest_signal(close, params)
         if result:
             quote = self._data.quotes([ticker]).get(ticker.symbol)
             result["data_source"] = self._data.source_name(ticker)
@@ -98,7 +107,7 @@ class AdviserService(IAdviserService):
                 raise ValidationError("Optimizer run not found for this ticker")
         elif user_id:
             run = self._optimizer_runs.latest_completed(user_id, ticker.id)
-        return (run.params_dict() if run else self._engine.default_params()), run
+        return (run.params_dict() if run else self._strategies.default.default_params()), run
 
     # ---- sessions ------------------------------------------------------------------------
 
@@ -154,8 +163,9 @@ class AdviserService(IAdviserService):
         return len(due)
 
     def evaluate_session(self, session: AdviserSession) -> Signal | None:
-        params = session.optimizer_run.params_dict() if session.optimizer_run else self._engine.default_params()
-        result = self._evaluate(session.ticker, params)
+        run = session.optimizer_run
+        engine = self._engine_for(run)
+        result = self._evaluate(session.ticker, engine, run.params_dict() if run else engine.default_params())
         session.last_evaluated_at = utcnow()
         if result is None:
             self._uow.commit()
@@ -179,12 +189,35 @@ class AdviserService(IAdviserService):
 
     def _notify(self, session: AdviserSession, signal: Signal) -> None:
         user = self._users.get_by_id(session.user_id)
-        if user is None or "email" not in (user.alert_channels or []):
+        if user is None:
             return
+        channels = user.alert_channels or []
+        if "email" in channels:
+            try:
+                self._email.send_signal_alert(to=user.email, first_name=user.first_name, signal=signal.to_dict())
+            except Exception:
+                logger.warning("signal email failed for %s", user.email, exc_info=True)
+        if "push" in channels and self._push.enabled:
+            self._send_push(user.id, signal)
+
+    def _send_push(self, user_id: str, signal: Signal) -> None:
+        tokens = self._devices.tokens_for_user(user_id)
+        if not tokens:
+            return
+        data = signal.to_dict()
+        confidence = round((data["confidence"] or 0) * 100)
+        title = f"{data['signal_type']} · {data['display_symbol']}"
+        body = f"{data['name']} at {data['price']:,.2f} {data['currency']} · {confidence}% confidence"
+        payload = {"type": "signal", "signal_id": data["id"], "symbol": data["symbol"], "signal_type": data["signal_type"]}
         try:
-            self._email.send_signal_alert(to=user.email, first_name=user.first_name, signal=signal.to_dict())
+            invalid = self._push.send(tokens, title=title, body=body, data=payload)
         except Exception:
-            logger.warning("signal email failed for %s", user.email, exc_info=True)
+            logger.warning("signal push failed for user %s", user_id, exc_info=True)
+            return
+        for token in invalid:
+            self._devices.remove(token)
+        if invalid:
+            self._uow.commit()
 
     def _require_ticker(self, symbol: str):
         ticker = self._catalog.ticker(symbol or "")

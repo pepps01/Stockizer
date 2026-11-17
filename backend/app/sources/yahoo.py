@@ -104,6 +104,9 @@ class YahooFundamentalsProvider(IFundamentalsProvider):
             "eps": self._float(info.get("trailingEps")),
             "dividend_yield": self._float(info.get("dividendYield")),  # yfinance reports percent
             "beta": self._float(info.get("beta")),
+            "price_to_book": self._float(info.get("priceToBook")),
+            "revenue_growth": self._float(info.get("revenueGrowth")),  # fraction, year over year
+            "earnings_growth": self._float(info.get("earningsGrowth")),
             "fifty_two_week_high": self._float(info.get("fiftyTwoWeekHigh")),
             "fifty_two_week_low": self._float(info.get("fiftyTwoWeekLow")),
             "employees": self._float(info.get("fullTimeEmployees")),

@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
 import '../theme.dart';
+import 'motion.dart';
 
 // Mobile counterparts of frontend/src/components/ui/primitives.tsx.
 
 String errorMessage(Object? error) => error is ApiException ? error.message : 'Something went wrong.';
 
-/// Bordered card with an optional title row and trailing action.
+/// A page section: a top hairline, an optional small-caps title with a
+/// trailing action, then the content. Quiet Ledger uses rules, not cards.
 class SectionCard extends StatelessWidget {
-  const SectionCard({super.key, this.title, this.action, required this.child, this.padding = const EdgeInsets.all(16)});
+  const SectionCard({super.key, this.title, this.action, required this.child, this.padding = const EdgeInsets.only(top: 18, bottom: 22)});
 
   final String? title;
   final Widget? action;
@@ -18,26 +20,24 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (title != null || action != null) ...[
-              Row(
-                children: [
-                  if (title != null)
-                    Expanded(child: Text(title!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
-                  ?action,
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-            child,
+    final p = context.palette;
+    return Container(
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: p.border))),
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null || action != null) ...[
+            Row(
+              children: [
+                if (title != null) Expanded(child: Text(title!.toUpperCase(), style: labelCaps(p))),
+                ?action,
+              ],
+            ),
+            const SizedBox(height: 14),
           ],
-        ),
+          child,
+        ],
       ),
     );
   }
@@ -62,7 +62,7 @@ class SectionHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
                 if (subtitle != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -96,9 +96,15 @@ class ErrorNote extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, size: 18, color: p.loss),
           const SizedBox(width: 8),
-          Expanded(child: Text(message!, style: TextStyle(color: p.loss, fontSize: 13))),
+          Expanded(
+            child: Text(message!, style: TextStyle(color: p.loss, fontSize: 13)),
+          ),
           if (onRetry != null)
-            TextButton(onPressed: onRetry, style: TextButton.styleFrom(foregroundColor: p.loss), child: const Text('Retry')),
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(foregroundColor: p.loss),
+              child: const Text('Retry'),
+            ),
         ],
       ),
     );
@@ -127,7 +133,9 @@ class Notice extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (icon != null) ...[Icon(icon, size: 18, color: tone == NoticeTone.brand ? p.brand : fg), const SizedBox(width: 10)],
-          Expanded(child: Text(message, style: TextStyle(color: fg, fontSize: 13, height: 1.35))),
+          Expanded(
+            child: Text(message, style: TextStyle(color: fg, fontSize: 13, height: 1.35)),
+          ),
         ],
       ),
     );
@@ -152,10 +160,18 @@ class EmptyState extends StatelessWidget {
         children: [
           Icon(icon, size: 36, color: p.mutedForeground),
           const SizedBox(height: 8),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
           if (message != null) ...[
             const SizedBox(height: 4),
-            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: p.mutedForeground, fontSize: 13)),
+            Text(
+              message!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.mutedForeground, fontSize: 13),
+            ),
           ],
         ],
       ),
@@ -173,10 +189,12 @@ class Skeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      width: width,
-      decoration: BoxDecoration(color: context.palette.surfaceMuted, borderRadius: BorderRadius.circular(radius)),
+    return Shimmer(
+      child: Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(color: context.palette.surfaceMuted, borderRadius: BorderRadius.circular(radius)),
+      ),
     );
   }
 }
@@ -190,7 +208,13 @@ class SkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: [for (var i = 0; i < count; i++) Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Skeleton(height: height))],
+      children: [
+        for (var i = 0; i < count; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Skeleton(height: height),
+          ),
+      ],
     );
   }
 }
@@ -301,8 +325,8 @@ class Segmented<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: p.surfaceMuted, borderRadius: BorderRadius.circular(999)),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -310,21 +334,23 @@ class Segmented<T> extends StatelessWidget {
           children: [
             for (final (option, label) in options)
               GestureDetector(
-                onTap: () => onChanged(option),
+                onTap: () {
+                  if (option != value) Haptics.tick();
+                  onChanged(option);
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
-                    color: option == value ? p.surface : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: option == value ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)] : null,
+                    color: option == value ? p.ink : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     label,
                     style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: option == value ? FontWeight.w600 : FontWeight.w500,
-                      color: option == value ? p.foreground : p.mutedForeground,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: option == value ? p.inkForeground : p.mutedForeground,
                     ),
                   ),
                 ),
@@ -349,12 +375,17 @@ class BusyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilledButton(
-      onPressed: busy ? null : onPressed,
+      onPressed: busy || onPressed == null
+          ? null
+          : () {
+              Haptics.tap();
+              onPressed!();
+            },
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (busy)
-            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: brandForest))
           else if (icon != null)
             Icon(icon, size: 18),
           if (busy || icon != null) const SizedBox(width: 10),

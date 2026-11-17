@@ -5,7 +5,8 @@ import threading
 import time
 from datetime import date, timedelta
 
-from app.contracts.analytics import ITechnicalAnalyzer
+from app.analytics.style import STOCK_TYPES
+from app.contracts.analytics import IStyleClassifier, ITechnicalAnalyzer
 from app.contracts.repositories import ICatalogRepository
 from app.contracts.services import IMarketBoard, IMarketDataService
 from app.domain.errors import NotFoundError, ValidationError
@@ -16,10 +17,19 @@ class MarketBoard(IMarketBoard):
     ANALYTICS_TTL_SECONDS = 120
     HISTORY_RANGES = {"1M": 31, "3M": 92, "6M": 183, "1Y": 366, "5Y": 5 * 366, "10Y": 10 * 366}
 
-    def __init__(self, catalog: ICatalogRepository, market_data: IMarketDataService, analyzer: ITechnicalAnalyzer):
+    # The catalog doesn't record index membership, so an index lists the stocks
+    # Stockiser covers in its market: its home country, or these countries.
+    INDEX_MARKETS = {
+        "^STOXX50E": ("DE", "FR", "NL", "ES", "IT"),  # Euro STOXX 50 spans the eurozone
+        "^VIX": (),  # a volatility index, not a basket of stocks
+    }
+    FUNDAMENTAL_FIELDS = ("market_cap", "pe_ratio", "forward_pe", "price_to_book", "dividend_yield", "revenue_growth", "earnings_growth")
+
+    def __init__(self, catalog: ICatalogRepository, market_data: IMarketDataService, analyzer: ITechnicalAnalyzer, styles: IStyleClassifier):
         self._catalog = catalog
         self._data = market_data
         self._analyzer = analyzer
+        self._styles = styles
         self._analytics: dict[str, tuple[float, dict]] = {}
         self._lock = threading.Lock()
 
@@ -82,6 +92,58 @@ class MarketBoard(IMarketBoard):
             "technicals": self._analyzer.rating(bars),
             "performance": self._analyzer.performance(bars),
         }
+
+    def index_members(self, symbol: str) -> dict:
+        index, countries, stocks = self._index_universe(symbol)
+        return {
+            "index": index.to_dict(),
+            "countries": list(countries),
+            "stocks": self._rows(stocks, analytics=True),
+        }
+
+    def index_financials(self, symbol: str) -> dict:
+        """The index's stocks split into growth / value (judged within each exchange)
+        and equity (all of them), with the fundamentals behind the split."""
+        index, countries, stocks = self._index_universe(symbol)
+        fundamentals = self._data.fundamentals_many(stocks)
+        quotes = self._data.quotes(stocks)
+        styles: dict[str, dict] = {}
+        for code in {t.exchange.code for t in stocks}:
+            on_exchange = {t.symbol: fundamentals.get(t.symbol, {}) for t in stocks if t.exchange.code == code}
+            styles.update(self._styles.classify(on_exchange))
+
+        entries = []
+        for t in stocks:
+            f = fundamentals.get(t.symbol) or {}
+            entries.append({
+                **t.to_dict(),
+                "quote": quotes.get(t.symbol),
+                **styles.get(t.symbol, {"style": None, "style_score": None}),
+                "fundamentals": {k: f.get(k) for k in self.FUNDAMENTAL_FIELDS},
+            })
+
+        def score(e, default):
+            return e["style_score"] if e["style_score"] is not None else default
+
+        segments = {
+            "growth": sorted((e for e in entries if e["style"] == "growth"), key=lambda e: -score(e, 0)),
+            "value": sorted((e for e in entries if e["style"] == "value"), key=lambda e: score(e, 0)),
+            "equity": sorted(entries, key=lambda e: -((e["fundamentals"]["market_cap"]) or 0)),
+        }
+        return {
+            "index": index.to_dict(),
+            "countries": list(countries),
+            "segments": [{"key": key, **STOCK_TYPES[key], "stocks": segments[key]} for key in ("growth", "value", "equity")],
+            "unclassified": sum(1 for e in entries if e["style"] is None),
+        }
+
+    def _index_universe(self, symbol: str):
+        index = self._require_ticker(symbol)
+        if index.kind != "index":
+            raise ValidationError("Only indices list member stocks")
+        countries = self.INDEX_MARKETS.get(index.symbol, (index.exchange.country_code,))
+        stocks = [t for code in countries for t in self._catalog.tickers(kind="stock", country_code=code)]
+        return index, countries, stocks
 
     def history(self, symbol: str, range_key: str) -> dict:
         ticker = self._require_ticker(symbol)

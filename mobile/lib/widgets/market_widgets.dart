@@ -9,6 +9,7 @@ import 'common.dart';
 import 'exchange_status_badge.dart';
 import 'flag.dart';
 import 'live_quotes.dart';
+import 'motion.dart';
 
 const _tabular = [FontFeature.tabularFigures()];
 
@@ -53,11 +54,15 @@ class _MarketListState extends State<MarketList> {
             children: [
               for (var i = 0; i < widget.rows.length; i++) ...[
                 if (i > 0) const Divider(),
-                MarketRowTile(
-                  row: widget.rows[i],
-                  quote: live[widget.rows[i].symbol] ?? widget.rows[i].quote,
-                  view: _view,
-                  showCountry: widget.showCountry,
+                FadeSlideIn(
+                  key: ValueKey(widget.rows[i].symbol),
+                  delay: FadeSlideIn.stagger(i),
+                  child: MarketRowTile(
+                    row: widget.rows[i],
+                    quote: live[widget.rows[i].symbol] ?? widget.rows[i].quote,
+                    view: _view,
+                    showCountry: widget.showCountry,
+                  ),
                 ),
               ],
             ],
@@ -95,13 +100,17 @@ class MarketRowTile extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text.rich(
-                        TextSpan(children: [
-                          TextSpan(text: formatNumber(quote?.price), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          if (!info.isIndex)
-                            TextSpan(text: ' ${currencyLabel(info.currency)}', style: TextStyle(fontSize: 10, color: p.mutedForeground)),
-                        ]),
-                        style: const TextStyle(fontSize: 14, fontFeatures: _tabular),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          TickingPrice(
+                            value: quote?.price,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          if (!info.isIndex) Text(currencyLabel(info.currency), style: TextStyle(fontSize: 10, color: p.mutedForeground)),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       ChangeText(quote?.changePercent, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
@@ -161,7 +170,12 @@ class TickerIdentity extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(info.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          info.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
         const SizedBox(height: 3),
         Wrap(
           spacing: 6,
@@ -191,11 +205,10 @@ class IndexStrip extends StatelessWidget {
       symbols: rows.map((r) => r.symbol),
       builder: (context, live) => SizedBox(
         height: 104,
-        child: ListView.separated(
+        child: ListView.builder(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: rows.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (context, i) => IndexCard(row: rows[i], quote: live[rows[i].symbol] ?? rows[i].quote),
         ),
       ),
@@ -203,6 +216,8 @@ class IndexStrip extends StatelessWidget {
   }
 }
 
+/// One headline index: name, light price, coloured change — separated from the
+/// next by a hairline rather than boxed in a card.
 class IndexCard extends StatelessWidget {
   const IndexCard({super.key, required this.row, required this.quote});
 
@@ -211,38 +226,39 @@ class IndexCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 170,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => openSymbol(context, row.symbol),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final p = context.palette;
+    return InkWell(
+      onTap: () => openSymbol(context, row.symbol),
+      child: Container(
+        width: 156,
+        margin: const EdgeInsets.only(right: 16),
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(border: Border(right: BorderSide(color: p.border))),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Flag(code: row.info.countryCode, size: 20),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(row.info.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                    ),
-                  ],
+                Expanded(
+                  child: Text(
+                    row.info.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p.mutedForeground),
+                  ),
                 ),
-                const Spacer(),
-                Text(formatNumber(quote?.price), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFeatures: _tabular)),
-                Row(
-                  children: [
-                    ChangeText(quote?.changePercent, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
-                    const Spacer(),
-                    SourceBadge(source: row.info.dataSource),
-                  ],
-                ),
+                SourceBadge(source: row.info.dataSource),
               ],
             ),
-          ),
+            const SizedBox(height: 6),
+            TickingPrice(
+              value: quote?.price,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w300, fontFeatures: priceFeatures),
+            ),
+            const SizedBox(height: 4),
+            ChangeText(quote?.changePercent, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ],
         ),
       ),
     );
@@ -268,11 +284,11 @@ class _MoversBoardState extends State<MoversBoard> {
   _MoverTab _tab = _MoverTab.gainers;
 
   List<MarketRow> get _rows => switch (_tab) {
-        _MoverTab.gainers => widget.movers.gainers,
-        _MoverTab.losers => widget.movers.losers,
-        _MoverTab.volume => widget.movers.highestVolume,
-        _MoverTab.volatile => widget.movers.mostVolatile,
-      };
+    _MoverTab.gainers => widget.movers.gainers,
+    _MoverTab.losers => widget.movers.losers,
+    _MoverTab.volume => widget.movers.highestVolume,
+    _MoverTab.volatile => widget.movers.mostVolatile,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -280,7 +296,7 @@ class _MoversBoardState extends State<MoversBoard> {
     return LiveQuotes(
       symbols: widget.movers.symbols,
       builder: (context, live) => SectionCard(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        padding: const EdgeInsets.only(top: 18, bottom: 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -297,7 +313,9 @@ class _MoversBoardState extends State<MoversBoard> {
             if (_rows.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: Text('Nothing to show in this market right now.', style: TextStyle(color: p.mutedForeground))),
+                child: Center(
+                  child: Text('Nothing to show in this market right now.', style: TextStyle(color: p.mutedForeground)),
+                ),
               ),
             for (var i = 0; i < _rows.length; i++) ...[
               if (i > 0) const Divider(),
@@ -337,8 +355,7 @@ class _MoverTile extends StatelessWidget {
                   '${formatNumber(quote?.price)} ${currencyLabel(row.info.currency)}',
                   style: const TextStyle(fontSize: 13, fontFeatures: _tabular),
                 ),
-                if (showVolume)
-                  Text('Vol ${formatCompact(quote?.volume)}', style: TextStyle(fontSize: 11, color: p.mutedForeground)),
+                if (showVolume) Text('Vol ${formatCompact(quote?.volume)}', style: TextStyle(fontSize: 11, color: p.mutedForeground)),
               ],
             ),
             const SizedBox(width: 8),
@@ -368,16 +385,15 @@ class ExchangeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     final e = exchange;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
+    return InkWell(
         onTap: () => openExchange(context, e.code),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
+        child: Container(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.border))),
+          padding: const EdgeInsets.symmetric(vertical: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flag(code: e.countryCode, size: 36),
+              Flag(code: e.countryCode, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -390,7 +406,12 @@ class ExchangeTile extends StatelessWidget {
                         SourceBadge(source: e.dataSource),
                       ],
                     ),
-                    Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: p.mutedForeground)),
+                    Text(
+                      e.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, color: p.mutedForeground),
+                    ),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 12,
@@ -411,7 +432,6 @@ class ExchangeTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

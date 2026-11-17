@@ -35,18 +35,30 @@ class SelectorMetric {
   const SelectorMetric(this.value, this.label);
 }
 
+/// The Selector's starting parameter: equity (all), growth or value stocks.
+class StockTypeOption {
+  final String value;
+  final String label;
+  final String description;
+  const StockTypeOption(this.value, this.label, this.description);
+}
+
 class SelectorOptions {
   final List<SelectorMetric> metrics;
+  final List<StockTypeOption> stockTypes;
   final String defaultStart;
   final String defaultEnd;
 
-  const SelectorOptions({required this.metrics, required this.defaultStart, required this.defaultEnd});
+  const SelectorOptions({required this.metrics, this.stockTypes = const [], required this.defaultStart, required this.defaultEnd});
 
   factory SelectorOptions.fromJson(Json json) {
     final period = json['default_period'] as Json? ?? const {};
     return SelectorOptions(
       metrics: (json['metrics'] as List<dynamic>? ?? const [])
           .map((m) => SelectorMetric((m as Json)['value'] as String, m['label'] as String))
+          .toList(),
+      stockTypes: (json['stock_types'] as List<dynamic>? ?? const [])
+          .map((t) => StockTypeOption((t as Json)['value'] as String, t['label'] as String? ?? '', t['description'] as String? ?? ''))
           .toList(),
       defaultStart: period['start'] as String? ?? '',
       defaultEnd: period['end'] as String? ?? '',
@@ -62,7 +74,10 @@ class SelectorResult {
   final double score;
   final Map<String, double> metrics;
 
-  const SelectorResult({required this.ticker, required this.rank, required this.score, required this.metrics});
+  /// "growth" | "value" | "blend", judged against the exchange's other stocks.
+  final String? style;
+
+  const SelectorResult({required this.ticker, required this.rank, required this.score, required this.metrics, this.style});
 
   double? metric(String key) => metrics[key];
 
@@ -70,7 +85,11 @@ class SelectorResult {
         ticker: TickerBrief.fromJson(json),
         rank: json['rank'] as int? ?? 0,
         score: toDouble(json['score']),
-        metrics: (json['metrics'] as Json? ?? const {}).map((k, v) => MapEntry(k, toDouble(v))),
+        metrics: {
+          for (final e in (json['metrics'] as Json? ?? const {}).entries)
+            if (e.value is num) e.key: (e.value as num).toDouble(),
+        },
+        style: (json['metrics'] as Json?)?['style'] as String?,
       );
 }
 
@@ -82,6 +101,7 @@ class SelectorRun {
   final String periodEnd;
   final String metric;
   final int topN;
+  final String stockType;
   final int universeSize;
   final String? artifactId;
   final String createdAt;
@@ -95,6 +115,7 @@ class SelectorRun {
     required this.periodEnd,
     required this.metric,
     required this.topN,
+    this.stockType = 'equity',
     required this.universeSize,
     this.artifactId,
     required this.createdAt,
@@ -109,6 +130,7 @@ class SelectorRun {
         periodEnd: json['period_end'] as String? ?? '',
         metric: json['metric'] as String? ?? '',
         topN: json['top_n'] as int? ?? 0,
+        stockType: json['stock_type'] as String? ?? 'equity',
         universeSize: json['universe_size'] as int? ?? 0,
         artifactId: json['artifact_id'] as String?,
         createdAt: json['created_at'] as String? ?? '',

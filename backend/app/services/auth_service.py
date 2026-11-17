@@ -66,6 +66,8 @@ class AuthService(IAuthService):
         user = self._users.get_by_email(email)
         if user is None or not check_password_hash(user.password_hash, password):
             raise AuthenticationError("Invalid email or password")
+        if user.is_active is False:
+            raise ForbiddenError("This account has been disabled. Contact support.")
         if not user.is_verified:
             raise ForbiddenError("Please verify your email before logging in")
         return {"access_token": create_access_token(identity=user.id), "user": user.to_dict()}

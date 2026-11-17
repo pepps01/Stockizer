@@ -58,9 +58,8 @@ class SignalBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: fg.withValues(alpha: 0.3)),
       ),
-      child: Text(t.wire, style: TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.w800)),
+      child: Text(t.wire, style: TextStyle(color: fg, fontSize: fontSize, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
     );
   }
 }

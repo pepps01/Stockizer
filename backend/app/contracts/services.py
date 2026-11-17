@@ -43,6 +43,10 @@ class IMarketDataService(ABC):
     def fundamentals(self, ticker, price: float | None) -> dict: ...
 
     @abstractmethod
+    def fundamentals_many(self, tickers: list) -> dict[str, dict]:
+        """Fundamentals for many tickers at once (fetched concurrently), by symbol."""
+
+    @abstractmethod
     def market_status(self, exchange) -> dict: ...
 
 
@@ -58,6 +62,14 @@ class IMarketBoard(ABC):
 
     @abstractmethod
     def symbol_detail(self, symbol: str) -> dict: ...
+
+    @abstractmethod
+    def index_members(self, symbol: str) -> dict:
+        """The stocks Stockiser covers in an index's market, with quotes and ratings."""
+
+    @abstractmethod
+    def index_financials(self, symbol: str) -> dict:
+        """Those stocks split into growth, value and equity segments."""
 
     @abstractmethod
     def history(self, symbol: str, range_key: str) -> dict: ...
@@ -91,7 +103,8 @@ class ISelectorService(ABC):
     def options(self) -> dict: ...
 
     @abstractmethod
-    def run(self, *, user_id: str, exchange_code: str, period_start: date, period_end: date, metric: str, top_n: int): ...
+    def run(self, *, user_id: str, exchange_code: str, period_start: date, period_end: date, metric: str, top_n: int,
+            stock_type: str = "equity"): ...
 
     @abstractmethod
     def list_runs(self, user_id: str) -> list: ...
@@ -116,6 +129,7 @@ class IOptimizerService(ABC):
         training_end: date,
         objective: str,
         bounds: dict | None,
+        strategy: str = "algebraic",
     ) -> list: ...
 
     @abstractmethod
@@ -166,3 +180,60 @@ class IAccountService(ABC):
 
     @abstractmethod
     def actions(self, user_id: str) -> list[dict]: ...
+
+    @abstractmethod
+    def assumptions(self, user_id: str) -> list[dict]:
+        """Assumed buy / hold / sell calls with the price then, now, and the move since."""
+
+    @abstractmethod
+    def set_assumption(self, user_id: str, symbol: str, stance: str) -> dict: ...
+
+    @abstractmethod
+    def clear_assumption(self, user_id: str, symbol: str) -> None: ...
+
+    @abstractmethod
+    def register_device(self, user_id: str, token: str, platform: str) -> None: ...
+
+    @abstractmethod
+    def unregister_device(self, user_id: str, token: str) -> None: ...
+
+
+class IPushService(ABC):
+    """Delivers push notifications to registered devices."""
+
+    @property
+    @abstractmethod
+    def enabled(self) -> bool: ...
+
+    @abstractmethod
+    def send(self, tokens: list[str], *, title: str, body: str, data: dict[str, str]) -> list[str]:
+        """Send to every token; returns the tokens the provider reported as invalid."""
+
+
+class IAdminService(ABC):
+    @abstractmethod
+    def overview(self) -> dict: ...
+
+    @abstractmethod
+    def list_users(self, *, query: str | None, page: int, page_size: int) -> dict: ...
+
+    @abstractmethod
+    def update_user(self, admin_id: str, user_id: str, changes: dict) -> dict: ...
+
+    @abstractmethod
+    def list_sessions(self, *, status: str | None, limit: int = 200) -> list[dict]: ...
+
+    @abstractmethod
+    def set_session_status(self, admin_id: str, session_id: str, status: str) -> dict: ...
+
+    @abstractmethod
+    def exchanges(self) -> list[dict]: ...
+
+    @abstractmethod
+    def tickers(self, exchange_code: str) -> list[dict]: ...
+
+    @abstractmethod
+    def set_ticker_active(self, admin_id: str, symbol: str, active: bool) -> dict: ...
+
+    @abstractmethod
+    def audit_log(self, limit: int = 100) -> list[dict]: ...

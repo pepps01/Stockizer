@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Text('New to Algizer?', style: TextStyle(color: p.mutedForeground)),
+                  Text('New to Stockiser?', style: TextStyle(color: p.mutedForeground)),
                   TextButton(onPressed: _register, child: const Text('Create an account')),
                 ],
               ),

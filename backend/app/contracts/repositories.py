@@ -145,9 +145,79 @@ class IUserActionRepository(ABC):
     def list_for_user(self, user_id: str, limit: int = 100) -> list: ...
 
 
+class IAssumptionRepository(ABC):
+    @abstractmethod
+    def upsert(self, user_id: str, ticker_id: str, stance: str, price: float | None): ...
+
+    @abstractmethod
+    def remove(self, user_id: str, ticker_id: str) -> None: ...
+
+    @abstractmethod
+    def list_for_user(self, user_id: str) -> list: ...
+
+
 class IArtifactRepository(ABC):
     @abstractmethod
     def add(self, artifact) -> None: ...
 
     @abstractmethod
     def get(self, artifact_id: str): ...
+
+
+class IDeviceTokenRepository(ABC):
+    @abstractmethod
+    def upsert(self, user_id: str, token: str, platform: str) -> None: ...
+
+    @abstractmethod
+    def remove(self, token: str, *, user_id: str | None = None) -> None: ...
+
+    @abstractmethod
+    def tokens_for_user(self, user_id: str) -> list[str]: ...
+
+
+class IAdminRepository(ABC):
+    """Read models and bulk updates for the admin area."""
+
+    @abstractmethod
+    def user_stats(self, since: datetime) -> dict: ...
+
+    @abstractmethod
+    def pipeline_stats(self, signals_since: datetime) -> dict: ...
+
+    @abstractmethod
+    def list_users(self, text: str | None, offset: int, limit: int) -> tuple[list, int]: ...
+
+    @abstractmethod
+    def user_activity(self, user_ids: list[str]) -> dict[str, dict]: ...
+
+    @abstractmethod
+    def count_admins(self) -> int:
+        """Active admins."""
+
+    @abstractmethod
+    def stop_sessions_for_user(self, user_id: str, stopped_at: datetime) -> int: ...
+
+    @abstractmethod
+    def list_sessions(self, status: str | None, limit: int) -> list[tuple]:
+        """(session, owner email) pairs, newest first."""
+
+    @abstractmethod
+    def get_session(self, session_id: str): ...
+
+    @abstractmethod
+    def recent_signals(self, limit: int) -> list[tuple]:
+        """(signal, owner email) pairs, newest first."""
+
+    @abstractmethod
+    def exchanges_with_counts(self) -> list[tuple]:
+        """(exchange, active stocks, all stocks)."""
+
+    @abstractmethod
+    def tickers_for_exchange(self, exchange_code: str) -> list:
+        """Every listing on the exchange, including hidden ones."""
+
+    @abstractmethod
+    def add_action(self, action) -> None: ...
+
+    @abstractmethod
+    def recent_actions(self, limit: int) -> list: ...

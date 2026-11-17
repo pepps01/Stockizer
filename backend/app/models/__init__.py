@@ -8,12 +8,15 @@ from app.models.pipeline import (
     SelectorRun,
     Signal,
 )
-from app.models.user import User, UserAction, WatchlistItem
+from app.models.user import AdminAction, Assumption, DeviceToken, User, UserAction, WatchlistItem
 
 __all__ = [
+    "AdminAction",
     "AdviserSession",
+    "Assumption",
     "Artifact",
     "Country",
+    "DeviceToken",
     "Exchange",
     "MarketData",
     "OptimalParameter",

@@ -5,7 +5,7 @@ export function SourceBadge({ source, className = "" }: { source: DataSource | n
   return (
     <span
       title="No free live feed covers this market, so prices are simulated by a deterministic model. Do not trade on them."
-      className={`inline-flex items-center rounded-full bg-hold-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-hold ${className}`}
+      className={`inline-flex items-center rounded border border-hold/30 px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.1em] text-hold ${className}`}
     >
       Simulated
     </span>
@@ -13,23 +13,24 @@ export function SourceBadge({ source, className = "" }: { source: DataSource | n
 }
 
 const SIGNAL_STYLES: Record<SignalType, string> = {
-  BUY: "bg-gain-soft text-gain ring-gain/30",
-  SELL: "bg-loss-soft text-loss ring-loss/30",
-  HOLD: "bg-hold-soft text-hold ring-hold/30",
+  BUY: "bg-gain-soft text-gain",
+  SELL: "bg-loss-soft text-loss",
+  HOLD: "bg-hold-soft text-hold",
 };
 
 export function SignalBadge({ type, size = "md" }: { type: SignalType | null | undefined; size?: "sm" | "md" | "lg" }) {
   if (!type) return <span className="text-muted-foreground">—</span>;
-  const sizes = { sm: "px-2 py-0.5 text-[11px]", md: "px-2.5 py-1 text-xs", lg: "px-4 py-1.5 text-base" };
-  return <span className={`inline-flex items-center rounded-full font-bold ring-1 ${SIGNAL_STYLES[type]} ${sizes[size]}`}>{type}</span>;
+  const sizes = { sm: "px-2.5 py-0.5 text-[11px]", md: "px-3 py-1 text-xs", lg: "px-4 py-1.5 text-base" };
+  return <span className={`inline-flex items-center rounded-full font-black tracking-[0.06em] ${SIGNAL_STYLES[type]} ${sizes[size]}`}>{type}</span>;
 }
 
 export function RatingLabel({ label }: { label: string | null | undefined }) {
   if (!label) return <span className="text-muted-foreground">—</span>;
-  const tone = label.includes("buy") || label === "Buy" ? "text-gain" : label.toLowerCase().includes("sell") ? "text-loss" : "text-muted-foreground";
-  const arrow = label.startsWith("Strong buy") ? "⇈" : label === "Buy" ? "↑" : label === "Strong sell" ? "⇊" : label === "Sell" ? "↓" : "=";
+  const lower = label.toLowerCase();
+  const tone = lower.includes("buy") ? "text-gain" : lower.includes("sell") ? "text-loss" : "text-muted-foreground";
+  const arrow = label === "Strong buy" ? "⇈" : label === "Buy" ? "↑" : label === "Strong sell" ? "⇊" : label === "Sell" ? "↓" : "=";
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap ${tone}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap font-bold ${tone}`}>
       <span aria-hidden className="text-xs">{arrow}</span>
       {label}
     </span>

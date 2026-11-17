@@ -1,5 +1,6 @@
-"""Selector module: rank an exchange's stocks by a performance criterion over a
-historical period, keep the top N, and save them to a ticker file."""
+"""Selector module: screen an exchange's stocks by type (equity = all, growth or
+value), rank them by a performance criterion over a historical period, keep the
+top N, and save them to a ticker file."""
 
 import csv
 import io
@@ -8,12 +9,22 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from app.contracts.analytics import IReturnStatistics
+from app.contracts.analytics import IReturnStatistics, IStyleClassifier
 from app.contracts.repositories import ICatalogRepository, ISelectorRunRepository, IUnitOfWork
 from app.contracts.services import IArtifactStore, IMarketDataService, ISelectorService
 from app.analytics.ranking import RankingMetricRegistry
+from app.analytics.style import STOCK_TYPES as STYLE_INFO
 from app.domain.errors import ValidationError
 from app.models import SelectorResult, SelectorRun
+from app.models.pipeline import STOCK_TYPES
+
+
+# Short descriptions for the Selector's picker; the full ones live in analytics/style.py.
+STOCK_TYPE_INFO = {
+    "equity": (STYLE_INFO["equity"]["label"], "Every listed stock on the exchange: a share of ownership in the company."),
+    "growth": (STYLE_INFO["growth"]["label"], "Expected to grow faster than the market. They reinvest profits, pay little or no dividend and trade on high P/E."),
+    "value": (STYLE_INFO["value"]["label"], "Trading below what their fundamentals suggest. Often mature, steady companies with low P/E that pay dividends."),
+}
 
 
 class SelectorService(ISelectorService):
@@ -31,6 +42,7 @@ class SelectorService(ISelectorService):
         uow: IUnitOfWork,
         statistics: IReturnStatistics,
         metrics: RankingMetricRegistry,
+        styles: IStyleClassifier,
     ):
         self._catalog = catalog
         self._data = market_data
@@ -39,6 +51,7 @@ class SelectorService(ISelectorService):
         self._uow = uow
         self._stats = statistics
         self._metrics = metrics
+        self._styles = styles
 
     @staticmethod
     def default_period() -> tuple[date, date]:
@@ -47,9 +60,14 @@ class SelectorService(ISelectorService):
 
     def options(self) -> dict:
         start, end = self.default_period()
-        return {"metrics": self._metrics.options(), "default_period": {"start": start.isoformat(), "end": end.isoformat()}}
+        return {
+            "metrics": self._metrics.options(),
+            "stock_types": [{"value": key, "label": label, "description": text} for key, (label, text) in STOCK_TYPE_INFO.items()],
+            "default_period": {"start": start.isoformat(), "end": end.isoformat()},
+        }
 
-    def run(self, *, user_id: str, exchange_code: str, period_start: date, period_end: date, metric: str, top_n: int) -> SelectorRun:
+    def run(self, *, user_id: str, exchange_code: str, period_start: date, period_end: date, metric: str, top_n: int,
+            stock_type: str = "equity") -> SelectorRun:
         ranking = self._metrics.get(metric)
         if ranking is None:
             raise ValidationError(f"metric must be one of {', '.join(self._metrics.keys())}")
@@ -57,6 +75,8 @@ class SelectorService(ISelectorService):
             raise ValidationError("period_end must be after period_start")
         if (period_end - period_start).days < self.MIN_PERIOD_DAYS:
             raise ValidationError(f"Choose a historical period of at least {self.MIN_PERIOD_DAYS} days")
+        if stock_type not in STOCK_TYPES:
+            raise ValidationError(f"stock_type must be one of {', '.join(STOCK_TYPES)}")
         if not 1 <= top_n <= self.MAX_TOP_N:
             raise ValidationError(f"top_n must be between 1 and {self.MAX_TOP_N}")
         exchange = self._catalog.exchange(exchange_code or "")
@@ -64,13 +84,18 @@ class SelectorService(ISelectorService):
             raise ValidationError("Unknown exchange")
 
         stocks = self._catalog.tickers(kind="stock", exchange_code=exchange.code)
+        styles = self._styles.classify(self._data.fundamentals_many(stocks))
+        if stock_type != "equity":
+            stocks = [t for t in stocks if styles.get(t.symbol, {}).get("style") == stock_type]
+            if not stocks:
+                raise ValidationError(f"No {stock_type} stocks could be identified on {exchange.name}: fundamentals are missing")
         history = self._data.history(stocks, period_start, period_end)
         scored = []
         for ticker in stocks:
             bars = history.get(ticker.symbol)
             if bars is None or len(bars) < self.MIN_BARS:
                 continue
-            metrics = self._ticker_metrics(bars["close"])
+            metrics = {**self._ticker_metrics(bars["close"]), **styles.get(ticker.symbol, {"style": None, "style_score": None})}
             scored.append((ticker, ranking.score(metrics), metrics))
         if not scored:
             raise ValidationError("No price history available for this exchange and period")
@@ -83,6 +108,7 @@ class SelectorService(ISelectorService):
             period_end=period_end,
             metric=metric,
             top_n=top_n,
+            stock_type=stock_type,
             universe_size=len(scored),
         )
         self._runs.add(run)
@@ -92,7 +118,7 @@ class SelectorService(ISelectorService):
         run.artifact_id = self._artifacts.save(
             owner_id=user_id,
             kind="ticker_file",
-            filename=f"selector_{exchange.code}_{metric}_{period_start}_{period_end}.csv",
+            filename=f"selector_{exchange.code}_{stock_type}_{metric}_{period_start}_{period_end}.csv",
             content=self._ticker_file(run, exchange.code),
             content_type="text/csv",
         ).id
@@ -118,9 +144,9 @@ class SelectorService(ISelectorService):
     def _ticker_file(run: SelectorRun, exchange_code: str) -> bytes:
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["rank", "symbol", "display_symbol", "name", "exchange", "currency", "score", "total_return", "sharpe", "volatility", "max_drawdown"])
+        writer.writerow(["rank", "symbol", "display_symbol", "name", "exchange", "currency", "score", "total_return", "sharpe", "volatility", "max_drawdown", "style"])
         for r in run.results:
             t, m = r.ticker, r.metrics
             writer.writerow([r.rank, t.symbol, t.display_symbol, t.company_name, exchange_code, t.currency, float(r.score),
-                             m["total_return"], m["sharpe"], m["volatility"], m["max_drawdown"]])
+                             m["total_return"], m["sharpe"], m["volatility"], m["max_drawdown"], m.get("style") or ""])
         return buf.getvalue().encode()

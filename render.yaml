@@ -5,6 +5,7 @@ services:
     name: stockiser-api
     runtime: python
     plan: free
+    region: singapore  # nearest Render region to the TiDB instance (Tokyo)
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: bash start.sh

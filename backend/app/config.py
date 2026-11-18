@@ -47,7 +47,12 @@ class Config:
     # Comma-separated env var overrides the default, which covers the Next.js
     # dev server and a locally-served Flutter web build (native Android/iOS/
     # desktop clients aren't browsers and send no Origin header).
-    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+    # Spaces and trailing slashes are ignored ("https://x.vercel.app/ " works).
+    CORS_ORIGINS = [
+        origin.strip().rstrip("/")
+        for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+        if origin.strip()
+    ]
 
     # "auto": Yahoo where the catalog says so, synthetic elsewhere.
     # "synthetic": every ticker simulated (offline development and tests).

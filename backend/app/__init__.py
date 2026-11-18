@@ -37,6 +37,7 @@ class ApplicationFactory:
         for controller in container.controllers():
             app.register_blueprint(controller.blueprint)
         container.realtime_gateway().register(sock)
+        self._register_root(app)
 
         from app.cli import register_cli
 
@@ -48,6 +49,17 @@ class ApplicationFactory:
             with app.app_context():
                 db.create_all()
         return app
+
+    @staticmethod
+    def _register_root(app: Flask) -> None:
+        """The bare API address answers with a status line instead of a 404,
+        so opening it in a browser shows the service is up."""
+
+        @app.get("/")
+        def root():
+            from flask import jsonify
+
+            return jsonify(service="Stockiser API", status="ok", health="/api/health", docs="All endpoints live under /api/")
 
     @staticmethod
     def _load_users_from_tokens(container: Container) -> None:

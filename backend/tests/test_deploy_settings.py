@@ -33,3 +33,8 @@ def test_ensure_admin_creates_then_promotes(monkeypatch):
     with app.app_context():
         assert User.query.filter_by(email="boss@example.com").one().is_admin
         db.drop_all()
+
+
+def test_root_address_answers_with_a_status(client):
+    res = client.get("/")
+    assert res.status_code == 200 and res.get_json()["status"] == "ok"

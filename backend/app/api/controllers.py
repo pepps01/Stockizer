@@ -348,9 +348,24 @@ class AdminController(Controller):
         self.route("/exchanges/<code>/tickers", self.tickers, admin=True)
         self.route("/tickers/<path:symbol>", self.update_ticker, methods=["PATCH"], admin=True, limit="120 per minute")
         self.route("/audit", self.audit, admin=True)
+        self.route("/request-info", self.request_info, admin=True)
 
     def overview(self):
         return self.ok(self._admin.overview())
+
+    def request_info(self):
+        """What the server sees of this request: the resolved client and the
+        forwarding headers, for setting TRUSTED_PROXY_HOPS behind a proxy."""
+        from flask import request
+
+        client = self.client()
+        names = ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "True-Client-IP", "X-Forwarded-Proto")
+        return self.ok(
+            client={"ip": client.ip, "platform": client.platform},
+            remote_addr=request.remote_addr,
+            headers={n: request.headers.get(n) for n in names if request.headers.get(n)},
+            original_remote_addr=request.environ.get("werkzeug.proxy_fix.orig", {}).get("REMOTE_ADDR"),
+        )
 
     def users(self):
         return self.ok(self._admin.list_users(

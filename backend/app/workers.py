@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 
 from flask import Flask
 
+from app.memory import release_memory
+
 from app.contracts.repositories import IUnitOfWork
 from app.contracts.services import IAdviserService, IMarketBoard
 
@@ -65,9 +67,15 @@ class CacheWarmer(PeriodicWorker):
     wait on a cold download."""
 
     def __init__(self, app: Flask, board: IMarketBoard, uow: IUnitOfWork):
-        super().__init__(app, uow, name="cache-warmer", interval=600, run_immediately=True)
+        super().__init__(app, uow, name="cache-warmer", interval=app.config["CACHE_WARM_INTERVAL"], run_immediately=True)
         self._board = board
+        # 0 = every exchange each tick; on small instances a few per tick, in turn.
+        self._count = app.config["CACHE_WARM_EXCHANGES"] or None
+        self._next = 0
 
     def tick(self) -> None:
-        self._board.warm()
-        logger.info("Market caches warmed")
+        try:
+            self._next = self._board.warm(start=self._next, count=self._count)
+            logger.info("Market caches warmed")
+        finally:
+            release_memory()

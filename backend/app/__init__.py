@@ -38,6 +38,7 @@ class ApplicationFactory:
             app.register_blueprint(controller.blueprint)
         container.realtime_gateway().register(sock)
         self._register_root(app)
+        self._release_memory_after_heavy_requests(app)
 
         from app.cli import register_cli
 
@@ -49,6 +50,20 @@ class ApplicationFactory:
             with app.app_context():
                 db.create_all()
         return app
+
+    @staticmethod
+    def _release_memory_after_heavy_requests(app: Flask) -> None:
+        """Selector and Optimizer runs load years of prices; hand that memory
+        back once the response is sent so the process doesn't stay inflated."""
+
+        @app.teardown_request
+        def release(_error):
+            from flask import request
+
+            if request.method == "POST" and request.path.rstrip("/").endswith("/runs"):
+                from app.memory import release_memory
+
+                release_memory()
 
     @staticmethod
     def _register_root(app: Flask) -> None:

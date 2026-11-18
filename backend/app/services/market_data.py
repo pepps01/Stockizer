@@ -55,7 +55,8 @@ class QuoteCache:
 
 
 class MarketDataService(IMarketDataService):
-    FUNDAMENTALS_WORKERS = 8
+    FUNDAMENTALS_WORKERS = 4
+    QUOTE_REFRESH_WORKERS = 2
     QUOTE_TTL = {"yahoo": 90, "synthetic": 10}
     HISTORY_REFRESH_SECONDS = 900
 
@@ -72,6 +73,8 @@ class MarketDataService(IMarketDataService):
         self._fundamentals = fundamentals
         self._mapper = mapper
         self._quotes = QuoteCache()
+        # Stale quotes refresh here, at most two at a time (each refresh is one batch download).
+        self._refresher = ThreadPoolExecutor(max_workers=self.QUOTE_REFRESH_WORKERS, thread_name_prefix="quote-refresh")
         self._fetched_from: dict[str, date] = {}
         self._refreshed_at: dict[str, float] = {}
 
@@ -149,7 +152,7 @@ class MarketDataService(IMarketDataService):
         if missing:
             self._refresh(self._jobs([by_symbol[s] for s in missing]))
         if stale:
-            threading.Thread(target=self._refresh, args=(self._jobs([by_symbol[s] for s in stale]),), daemon=True).start()
+            self._refresher.submit(self._refresh, self._jobs([by_symbol[s] for s in stale]))
         return self._quotes.get_many(list(by_symbol))
 
     def _jobs(self, tickers: list) -> list[tuple]:

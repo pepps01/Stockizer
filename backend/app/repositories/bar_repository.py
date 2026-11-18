@@ -1,6 +1,7 @@
 import time
 from datetime import date
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.exc import OperationalError
@@ -17,6 +18,7 @@ class SqlAlchemyBarRepository(IBarRepository):
     the cache is independent of any business transaction."""
 
     DEADLOCK_RETRIES = 3
+    READ_BATCH = 5000  # rows fetched per round trip while streaming
     RETRYABLE_MYSQL_ERRORS = {1213, 1205}  # deadlock found; lock wait timeout
 
     def coverage(self, ticker_ids: list[str]) -> dict[str, tuple[date, date]]:
@@ -82,7 +84,10 @@ class SqlAlchemyBarRepository(IBarRepository):
     def read(self, ticker_ids: list[str], start: date, end: date) -> dict[str, pd.DataFrame]:
         if not ticker_ids:
             return {}
-        rows = (
+        # Streamed in batches and kept as plain floats per ticker: a Selector run
+        # reads years of bars for a whole exchange, and holding every row (prices
+        # as Decimal objects) plus a converted copy was the API's biggest spike.
+        query = (
             db.session.query(
                 MarketData.ticker_id,
                 MarketData.ts,
@@ -94,14 +99,23 @@ class SqlAlchemyBarRepository(IBarRepository):
             )
             .filter(MarketData.ticker_id.in_(ticker_ids), MarketData.ts >= start, MarketData.ts <= end)
             .order_by(MarketData.ticker_id, MarketData.ts)
-            .all()
+            .yield_per(self.READ_BATCH)
         )
+        columns: dict[str, tuple[list, ...]] = {}
+        for tid, ts, o, h, lo, c, v in query:
+            acc = columns.get(tid)
+            if acc is None:
+                acc = columns[tid] = ([], [], [], [], [], [])
+            acc[0].append(ts)
+            acc[1].append(float(o))
+            acc[2].append(float(h))
+            acc[3].append(float(lo))
+            acc[4].append(float(c))
+            acc[5].append(float(v))
         out = {tid: empty_bars() for tid in ticker_ids}
-        if not rows:
-            return out
-        frame = pd.DataFrame(rows, columns=["ticker_id", "ts", *BAR_COLUMNS])
-        for tid, group in frame.groupby("ticker_id"):
-            bars = group.set_index("ts")[BAR_COLUMNS].astype(float)
-            bars.index = list(bars.index)
-            out[tid] = bars
+        for tid, (ts, o, h, lo, c, v) in columns.items():
+            out[tid] = pd.DataFrame(
+                {name: np.asarray(values, dtype=float) for name, values in zip(BAR_COLUMNS, (o, h, lo, c, v))},
+                index=ts,
+            )
         return out

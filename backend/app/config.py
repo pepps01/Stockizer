@@ -66,6 +66,11 @@ class Config:
     ADVISER_WORKER = os.environ.get("ADVISER_WORKER", "1") == "1"
     ADVISER_TICK_SECONDS = 5
 
+    # Cache warmer: seconds between runs, and exchanges warmed per run (0 = all).
+    # Small instances warm a few exchanges per run, in turn, to cap memory.
+    CACHE_WARM_INTERVAL = int(os.environ.get("CACHE_WARM_INTERVAL", "600"))
+    CACHE_WARM_EXCHANGES = int(os.environ.get("CACHE_WARM_EXCHANGES", "0"))
+
 
 class DevConfig(Config):
     DEBUG = True

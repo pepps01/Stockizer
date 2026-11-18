@@ -166,12 +166,19 @@ class MarketBoard(IMarketBoard):
             ],
         }
 
-    def warm(self) -> None:
-        """Pre-load remote history and quotes so no visitor pays for the first download."""
+    def warm(self, *, start: int = 0, count: int | None = None) -> int:
+        """Pre-load remote history and quotes so no visitor pays for the first
+        download: the home boards, then `count` exchanges from position `start`
+        (all of them when count is None). Returns where the next call should start."""
         self.indices()
         self.movers()
-        for exchange in self._catalog.exchanges():
-            self.exchange_listing(exchange.code)
+        codes = [e.code for e in self._catalog.exchanges()]
+        if not codes:
+            return 0
+        batch = codes if count is None else [codes[(start + i) % len(codes)] for i in range(min(count, len(codes)))]
+        for code in batch:
+            self.exchange_listing(code)
+        return 0 if count is None else (start + len(batch)) % len(codes)
 
     # ---- internals -----------------------------------------------------------------------
 

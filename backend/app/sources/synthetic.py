@@ -14,6 +14,7 @@ the day and settles on the final daily bar.
 
 import hashlib
 import threading
+from collections import OrderedDict
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -29,7 +30,14 @@ WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
 class SyntheticMarketModel:
-    """Generates and memoises full daily series (EPOCH → HORIZON) per symbol."""
+    """Generates daily series per symbol and memoises the recent ones.
+
+    A series is always drawn over the whole EPOCH → HORIZON calendar (so prices
+    never change), but only rows up to a month or two ahead are kept, and at
+    most MAX_SERIES symbols stay in memory; others are regenerated on demand
+    (a few milliseconds each)."""
+
+    MAX_SERIES = 48
 
     @staticmethod
     def seed(*parts: str) -> int:
@@ -40,7 +48,7 @@ class SyntheticMarketModel:
     def __init__(self):
         self._calendars: dict[tuple, pd.DatetimeIndex] = {}
         self._factors: dict[tuple, np.ndarray] = {}
-        self._series: dict[tuple, pd.DataFrame] = {}
+        self._series: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
         self._lock = threading.Lock()
 
     def calendar(self, trading_days: tuple[int, ...]) -> pd.DatetimeIndex:
@@ -62,11 +70,34 @@ class SyntheticMarketModel:
 
     def series(self, ref: TickerRef) -> pd.DataFrame:
         base = ref.base_price or self.default_base_price(ref.symbol)
-        key = (ref.symbol, ref.kind, ref.exchange_code, ref.session.trading_days, float(base))
+        keep_until = self.keep_until()
+        key = (ref.symbol, ref.kind, ref.exchange_code, ref.session.trading_days, float(base), keep_until)
         with self._lock:
-            if key not in self._series:
-                self._series[key] = self._generate(ref, float(base))
-            return self._series[key]
+            frame = self._series.get(key)
+            if frame is not None:
+                self._series.move_to_end(key)
+                return frame
+        frame = self._trim(self._generate(ref, float(base)), keep_until)
+        with self._lock:
+            self._series[key] = frame
+            while len(self._series) > self.MAX_SERIES:
+                self._series.popitem(last=False)
+        return frame
+
+    @staticmethod
+    def keep_until(today: date | None = None) -> date:
+        """Last day kept in memory: the end of next month (changes monthly)."""
+        today = today or date.today()
+        year, month = (today.year + (today.month + 1) // 12, (today.month + 1) % 12 + 1)
+        return date(year, month, 1) - timedelta(days=1)
+
+    @staticmethod
+    def _trim(frame: pd.DataFrame, keep_until: date) -> pd.DataFrame:
+        """Drops rows after keep_until; positions (and day_sigma) stay aligned."""
+        rows = int(np.searchsorted(np.array(frame.index, dtype="datetime64[D]"), np.datetime64(keep_until), side="right"))
+        trimmed = frame.iloc[:rows].copy()
+        trimmed.attrs["day_sigma"] = frame.attrs["day_sigma"][:rows].copy()
+        return trimmed
 
     @staticmethod
     def default_base_price(symbol: str) -> float:

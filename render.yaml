@@ -37,3 +37,14 @@ services:
         value: "3"
       - key: ADVISER_WORKER
         value: "1"
+      # Memory (free plan: 512 MB). Two malloc arenas instead of one per thread
+      # stop glibc fragmenting across the request threads; fewer threads; and
+      # the cache warmer refreshes six exchanges per run, in turn.
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: GUNICORN_THREADS
+        value: "12"
+      - key: CACHE_WARM_EXCHANGES
+        value: "6"
+      - key: CACHE_WARM_INTERVAL
+        value: "300"

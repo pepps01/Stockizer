@@ -7,7 +7,7 @@ import os
 bind = f"0.0.0.0:{os.environ.get('PORT', '5000')}"
 workers = 1
 worker_class = "gthread"
-threads = int(os.environ.get("GUNICORN_THREADS", "32"))
+threads = int(os.environ.get("GUNICORN_THREADS", "12"))
 timeout = 300  # Selector and Optimizer runs download history on first use
 graceful_timeout = 30
 accesslog = "-"

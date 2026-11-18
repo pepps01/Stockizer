@@ -15,7 +15,8 @@ class YahooPriceSource(IPriceSource):
     """Daily bars and snapshots from Yahoo Finance via yfinance."""
 
     name = "yahoo"
-    CHUNK_SIZE = 150  # symbols per download call; keeps a single failure contained
+    CHUNK_SIZE = 50  # symbols per download call; bounds memory and contains failures
+    DOWNLOAD_THREADS = 4
 
     def daily_bars(self, refs: list[TickerRef], start: date, end: date) -> dict[str, pd.DataFrame]:
         return self._download([r.symbol for r in refs], start=start.isoformat(), end=(end + timedelta(days=1)).isoformat())
@@ -42,7 +43,7 @@ class YahooPriceSource(IPriceSource):
         for i in range(0, len(symbols), self.CHUNK_SIZE):
             chunk = symbols[i : i + self.CHUNK_SIZE]
             try:
-                raw = yf.download(chunk, interval="1d", group_by="ticker", auto_adjust=True, progress=False, threads=True, **kwargs)
+                raw = yf.download(chunk, interval="1d", group_by="ticker", auto_adjust=True, progress=False, threads=self.DOWNLOAD_THREADS, **kwargs)
             except Exception:
                 logger.warning("yfinance download failed for %s", chunk, exc_info=True)
                 continue

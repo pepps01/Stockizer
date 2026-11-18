@@ -32,7 +32,8 @@ services:
         sync: false
       - key: REQUIRE_EMAIL_VERIFICATION
         value: "0"
+      # Render chain: visitor, Cloudflare edge, Render router (seen via /api/admin/request-info).
       - key: TRUSTED_PROXY_HOPS
-        value: "1"
+        value: "3"
       - key: ADVISER_WORKER
         value: "1"
